@@ -2,11 +2,11 @@
 
 from __future__ import print_function, division, absolute_import
 
-import gpu_config
+#import gpu_config
 import tensorflow as tf
 
 from collections import namedtuple
-import time, os, cPickle, sys, threading, glob
+import time, os, sys, threading, glob
 from datetime import datetime
 import time
 

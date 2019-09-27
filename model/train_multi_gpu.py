@@ -3,7 +3,7 @@ WARNING: this file is still under development, is not guaranteed to work.
 '''
 from __future__ import print_function, absolute_import, division
 
-import gpu_config
+#import gpu_config
 import tensorflow as tf
 import network.slim as slim
 import numpy as np

@@ -26,25 +26,25 @@ class Evaluation(object):
         for i in range(0, len(score_list)):
             if(score_list[i]<=10.5):
                 th_idx += 1
-        print '10mm percentage: %f'%(float(th_idx)/len(score_list))
+        print('10mm percentage: %f'%(float(th_idx)/len(score_list)))
 
         th_idx = 0
         for i in range(0, len(score_list)):
             if(score_list[i]<=20.5):
                 th_idx += 1
-        print '20mm percentage: %f'%(float(th_idx)/len(score_list))
+        print('20mm percentage: %f'%(float(th_idx)/len(score_list)))
 
         th_idx = 0
         for i in range(0, len(score_list)):
             if(score_list[i]<=30.5):
                 th_idx += 1
-        print '30mm percentage: %f'%(float(th_idx)/len(score_list))
+        print('30mm percentage: %f'%(float(th_idx)/len(score_list)))
 
         th_idx = 0
         for i in range(0, len(score_list)):
             if(score_list[i]<=40.5):
                 th_idx += 1
-        print '40mm percentage: %f'%(float(th_idx)/len(score_list))
+        print('40mm percentage: %f'%(float(th_idx)/len(score_list)))
 
         thresh_list = [thresh*5.0+0.5 for thresh in range(0, 17)]
         precent_list = [1]*len(thresh_list)
@@ -67,25 +67,25 @@ class Evaluation(object):
         for i in range(0, len(score_list)):
             if(score_list[i]<=10.5):
                 th_idx += 1
-        print '10mm percentage: %f'%(float(th_idx)/len(score_list))
+        print('10mm percentage: %f'%(float(th_idx)/len(score_list)))
 
         th_idx = 0
         for i in range(0, len(score_list)):
             if(score_list[i]<=20.5):
                 th_idx += 1
-        print '20mm percentage: %f'%(float(th_idx)/len(score_list))
+        print('20mm percentage: %f'%(float(th_idx)/len(score_list)))
 
         th_idx = 0
         for i in range(0, len(score_list)):
             if(score_list[i]<=30.5):
                 th_idx += 1
-        print '30mm percentage: %f'%(float(th_idx)/len(score_list))
+        print('30mm percentage: %f'%(float(th_idx)/len(score_list)))
 
         th_idx = 0
         for i in range(0, len(score_list)):
             if(score_list[i]<=40.5):
                 th_idx += 1
-        print '40mm percentage: %f'%(float(th_idx)/len(score_list))
+        print('40mm percentage: %f'%(float(th_idx)/len(score_list)))
 
         thresh_list = [thresh*5.0+0.5 for thresh in range(0, 17)]
         precent_list = [1]*len(thresh_list)
