@@ -167,6 +167,11 @@ def detect_net(dm_inputs, cfgs, coms, num_jnt, is_training=True, scope=''):
                                      activation=None,
                                      batch_norm_params=None,
                                      weight_decay=0.0005)
+
+                # 增加几层
+                with tf.variable_scope('GNN_'+str(i)):
+                    hm_out = _residual(hm_out)
+
                 end_points['hm_outs'].append(hm_out)
                 end_points['hm3_outs'].append(hm3_out)
                 end_points['um_outs'].append(um_out)

@@ -906,7 +906,7 @@ if __name__ == '__main__':
     # --dataset nyu --batch_size 24 --num_stack 2 --num_fea 128 --debug_level 2 --is_train True
     # 测试使用
     # --dataset nyu --batch_size 3 --num_stack 2 --num_fea 128 --debug_level 2 --is_train False
-    FLAGS.is_train = False
+    # FLAGS.is_train = False
     if FLAGS.is_train:
         run_train(dataset, val_dataset, -1)
     else:
