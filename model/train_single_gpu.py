@@ -122,7 +122,7 @@ def train(model, restore_step=None):
         if restore_step is not None:# and restore_step>0:
 
             # # 得到该网络中，所有可以加载的参数
-            retrain = True
+            retrain = False
             if retrain:
                 variables = tf.contrib.framework.get_variables_to_restore()
                 # 删除output层中的参数
@@ -185,7 +185,7 @@ def train(model, restore_step=None):
                 if not os.path.exists(model.train_dir):
                     os.makedirs(model.train_dir)
                 checkpoint_path = os.path.join(model.train_dir, 'model.ckpt')
-                saver.save(sess, checkpoint_path, global_step=step)
+                saver.save(sess, checkpoint_path, global_step=step+3)
                 print('model has been saved to %s\n'%checkpoint_path)
                 f.write('model has been saved to %s\n'%checkpoint_path)
                 f.flush()

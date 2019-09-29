@@ -2,7 +2,7 @@ from __future__ import print_function, absolute_import, division
 
 #import gpu_config
 import tensorflow as tf
-from network.slim import scopes, ops
+from network.slim import  scopes, ops, losses, variables
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -14,7 +14,7 @@ _batch_norm_params={'decay':0.99,
 # simultaneously regressing the 3D offset and the 2D heatmap
 # v0 + dropout on the fully connected layer
 TOWER_NAME = 'um_v1'
-
+CAM_num = 0
 def _residual(ins, num_out=None):
     ''' the bottleneck residual module
     Args:
@@ -36,6 +36,38 @@ def _residual(ins, num_out=None):
                          stride=1,
                          padding='SAME'):
         half_num_in = int(num_in//2)
+        out_1 = ops.conv2d(ins, half_num_in, [1,1])
+        k = FLAGS.kernel_size
+        out_1 = ops.conv2d(out_1, half_num_in, [k,k])
+        out_1 = ops.conv2d(out_1, num_out, [1,1])
+
+        if num_out == num_in:
+            out_2 = ins
+        else:
+            out_2 = ops.conv2d(ins, num_out, [1,1])
+        return out_1+out_2
+
+def _residual2(ins, num_out=None):
+    ''' the bottleneck residual module
+    Args:
+        ins: the inputs
+        k: kernel size
+        num_out: number of the output feature maps, default set as the same as input
+    Returns:
+        residual network output
+    '''
+    num_in = ins.shape[-1].value
+    if num_out is None:
+        num_out = num_in
+
+    with scopes.arg_scope([ops.conv2d],
+                         stddev=0.01,
+                         activation=tf.nn.relu,
+                         batch_norm_params=_batch_norm_params,
+                         weight_decay=0.0005,
+                         stride=1,
+                         padding='SAME'):
+        half_num_in = num_in
         out_1 = ops.conv2d(ins, half_num_in, [1,1])
         k = FLAGS.kernel_size
         out_1 = ops.conv2d(out_1, half_num_in, [k,k])
@@ -73,10 +105,17 @@ def detect_net(dm_inputs, cfgs, coms, num_jnt, is_training=True, scope=''):
     end_points['hm_outs'] = []
     end_points['hm3_outs'] = []
     end_points['um_outs'] = []
-
+    end_points['hm_outs_GNN2'] = []
+    end_points['hm3_outs_GNN2'] = []
+    end_points['um_outs_GNN2'] = []
+    end_points['hm_outs_GNN5'] = []
+    end_points['hm3_outs_GNN5'] = []
+    end_points['um_outs_GNN5'] = []
+    global CAM_num
+    CAM_num = 0
     with tf.name_scope(scope, 'hg_net'):
         with scopes.arg_scope([ops.conv2d, ops.fc, ops.batch_norm, ops.dropout],
-                              is_training = is_training):
+                              is_training = True):
             
             input_w, input_h = dm_inputs.shape[2].value, dm_inputs.shape[1].value
 
@@ -168,9 +207,6 @@ def detect_net(dm_inputs, cfgs, coms, num_jnt, is_training=True, scope=''):
                                      batch_norm_params=None,
                                      weight_decay=0.0005)
 
-                # 增加几层
-                with tf.variable_scope('GNN_'+str(i)):
-                    hm_out = _residual(hm_out)
 
                 end_points['hm_outs'].append(hm_out)
                 end_points['hm3_outs'].append(hm3_out)
@@ -187,5 +223,74 @@ def detect_net(dm_inputs, cfgs, coms, num_jnt, is_training=True, scope=''):
 
                     hg_ins = hg_ins + tmp_out_reshaped + inter
 
-            return end_points 
+    # 获取5个输入[24,32,32,14] hm_out, hm3_out, um_out1,um_out2,um_out3
+    # 得到5个输入[24,32,32,14] hm_out_g, hm3_out_g, um_out1_g,um_out2_g,um_out3_g
+    hm_out_in = hm_out
+    hm3_out_in = hm3_out
 
+    um_out123 = tf.reshape(um_out, (-1, 32, 32, 14, 3))
+    um_out1 = um_out123[:, :, :, :, 0]
+    um_out2 = um_out123[:, :, :, :, 1]
+    um_out3 = um_out123[:, :, :, :, 2]
+    output_list = []
+    for cur_node_representations in [hm_out_in, hm3_out_in, um_out1, um_out2, um_out3]:
+        last_residual_representations = tf.zeros_like(cur_node_representations)
+        for layer_idx in range(6):
+            CAM_num = CAM_num + 1
+            with tf.variable_scope('GNN_' + str(layer_idx) + '_' + str(CAM_num)):
+
+                weights_initializer = tf.truncated_normal_initializer(stddev=0.01)
+                l2_regularizer = losses.l2_regularizer(0.0005)
+                learnable_Adj = variables.variable('learnable_adj_weights_' + str(CAM_num),
+                                                   shape=[14, 14],
+                                                   initializer=weights_initializer,
+                                                   regularizer=l2_regularizer,
+                                                   trainable=True,
+                                                   restore=True)
+
+                if layer_idx % 2 == 0:
+                    t = cur_node_representations
+                    if layer_idx > 0:
+                        cur_node_representations += last_residual_representations
+                        cur_node_representations /= 2
+                    last_residual_representations = t
+                cur_node_representations = _apply_gnn_layer(
+                    cur_node_representations,
+                    learnable_Adj, uvd)
+                cur_node_representations = tf.contrib.layers.layer_norm(cur_node_representations)
+
+                if layer_idx == 2 or layer_idx == 5:
+                    output_list.append(cur_node_representations)
+
+    end_points['hm_outs_GNN2'].append(output_list[0])
+    end_points['hm_outs_GNN5'].append(output_list[1])
+
+    end_points['hm3_outs_GNN2'].append(output_list[2])
+    end_points['hm3_outs_GNN5'].append(output_list[3])
+
+    end_points['um_outs_GNN2'].append(
+        tf.concat([output_list[4], output_list[6], output_list[8]], axis=-1))  # [4,6,8]
+    end_points['um_outs_GNN5'].append(
+        tf.concat([output_list[5], output_list[7], output_list[9]], axis=-1))  # [5,7,9]
+    return end_points
+
+def _apply_gnn_layer(node_embeddings_: tf.Tensor,
+                      adjacency_lists: tf.Tensor,
+                      uvd: tf.Tensor,
+                      num_timesteps: int = 3,
+                      gated_unit_type: str = "gru",
+                      activation_function: str = "tanh",
+                      message_aggregation_function: str = "sum"
+                      ) -> tf.Tensor:
+
+
+    #cur_node_states = tf.reshape(node_embeddings,(batch, -1))
+    n, h, w, c = node_embeddings_.shape
+    node_embeddings = tf.reshape(node_embeddings_,(-1,14))
+    node_embeddings = tf.matmul(node_embeddings, adjacency_lists)  # [D*B, G]
+    node_embeddings = tf.reshape(node_embeddings, (n, h, w, 14))
+    node_embeddings = tf.concat([node_embeddings,node_embeddings_, uvd], axis=-1)
+    # === Prepare things we need across all timesteps:
+    node_embeddings = _residual(node_embeddings, num_out=14)
+
+    return node_embeddings
