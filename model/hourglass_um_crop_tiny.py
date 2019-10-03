@@ -66,7 +66,7 @@ MAXIMUM_DEPTH = 600.0
 class JointDetectionModel(object):
     _moving_average_decay = 0.9999
     _batchnorm_moving_average_decay = 0.9997
-    _init_lr = 0.001 
+    _init_lr = 0.001  * 1e7
     if FLAGS.dataset == 'nyu':
         _num_epochs_per_decay = 10
     elif FLAGS.dataset == 'msra':
@@ -345,93 +345,135 @@ class JointDetectionModel(object):
         gt_hm3s = self._hm_3d(gt_oms)
         gt_ums = self._um(gt_oms, gt_hm3s)
 
+        input_w, input_h = normed_dms.shape[2].value, normed_dms.shape[1].value
+        output_w, output_h = int(input_w / 4), int(input_h / 4)
+        tiny_dm = tf.image.resize_images(normed_dms, (output_h, output_w), 2)
+        mask = tf.tile(tf.less(tiny_dm, -0.9), (1, 1, 1, 14))
+        mask = 1 - tf.cast(mask, dtype=tf.float32)
+        # 2D_mask chen_begin
+        gt_hms = gt_hms*mask
+        # 2D_mask chen_end
+
         # generate estimation
         end_points = self.inference(normed_dms, cfgs, coms, reuse_variables=None, is_training=True)
         
         # heatmap loss
-        est_hm_list = end_points['hm_outs'] 
-        hm_losses = [tf.nn.l2_loss(est_hms-gt_hms) for est_hms in est_hm_list]
+        est_hm_list1 = end_points['hm_outs']
+        hm_losses1 = [tf.nn.l2_loss(est_hms-gt_hms) for est_hms in est_hm_list1]
+        est_hm_list2 = end_points['hm_outs_GNN2']*2
+        hm_losses2 = [tf.nn.l2_loss(est_hms-gt_hms) for est_hms in est_hm_list2]
+        est_hm_list3 = end_points['hm_outs_GNN5']*2
+        hm_losses3 = [tf.nn.l2_loss(est_hms-gt_hms) for est_hms in est_hm_list3]
+
 
         # 3D heatmap loss
-        est_hm3_list = end_points['hm3_outs']
-        hm3_losses = [tf.nn.l2_loss(est_hm3-gt_hm3s) for est_hm3 in est_hm3_list]
+        est_hm3_list1 = end_points['hm3_outs']
+        hm3_losses1 = [tf.nn.l2_loss(est_hm3-gt_hm3s) for est_hm3 in est_hm3_list1]
+        est_hm3_list2 = end_points['hm3_outs_GNN2']*2
+        hm3_losses2 = [tf.nn.l2_loss(est_hm3-gt_hm3s) for est_hm3 in est_hm3_list2]
+        est_hm3_list3 = end_points['hm3_outs_GNN5']*2
+        hm3_losses3 = [tf.nn.l2_loss(est_hm3-gt_hm3s) for est_hm3 in est_hm3_list3]
 
         # offsetmap loss
         # we only consider the nearby point offset maps
         # in order to make the oms loss on the same scale w.r.t. hms loss
-        est_um_list = end_points['um_outs'] 
-        um_losses = [tf.nn.l2_loss(est_ums-gt_ums) for est_ums in est_um_list]
+        est_um_list1 = end_points['um_outs']
+        um_losses1 = [tf.nn.l2_loss(est_ums-gt_ums) for est_ums in est_um_list1]
+        est_um_list2 = end_points['um_outs_GNN2']*2
+        um_losses2 = [tf.nn.l2_loss(est_ums-gt_ums) for est_ums in est_um_list2]
+        est_um_list3 = end_points['um_outs_GNN5']*2
+        um_losses3 = [tf.nn.l2_loss(est_ums-gt_ums) for est_ums in est_um_list3]
+
 
         # add the weight decay loss
         reg_loss = tf.add_n(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES), 'reg_loss')
-        hm_loss = tf.add_n(hm_losses, 'hm_loss')
-        um_loss = tf.add_n(um_losses, 'um_loss')
-        hm3_loss = tf.add_n(hm3_losses, 'hm3_loss')
+        hm_loss1 = tf.add_n(hm_losses1, 'hm_loss1')
+        um_loss1 = tf.add_n(um_losses1, 'um_loss1')
+        hm3_loss1 = tf.add_n(hm3_losses1, 'hm3_loss1')
 
-        total_loss = reg_loss+hm_loss+um_loss+hm3_loss
+        hm_loss2 = tf.add_n(hm_losses2, 'hm_loss2')
+        um_loss2 = tf.add_n(um_losses2, 'um_loss2')
+        hm3_loss2 = tf.add_n(hm3_losses2, 'hm3_loss2')
 
-        tf.summary.scalar('tra/um_loss', um_loss)
-        tf.summary.scalar('tra/hm_loss', hm_loss)
-        tf.summary.scalar('tra/hm3_loss', hm3_loss)
+        hm_loss3 = tf.add_n(hm_losses3, 'hm_loss3')
+        um_loss3 = tf.add_n(um_losses3, 'um_loss3')
+        hm3_loss3 = tf.add_n(hm3_losses3, 'hm3_loss3')
 
-        # to visualize the training error, 
+        total_loss = (hm_loss1 + um_loss1 + hm3_loss1+
+                      hm_loss2 + um_loss2 + hm3_loss2+
+                      hm_loss3 + um_loss3 + hm3_loss3)/3 +reg_loss
+
+        tf.summary.scalar('dir/um_loss', um_loss1)
+        tf.summary.scalar('dir/hm_loss', hm_loss1)
+        tf.summary.scalar('dir/hm3_loss', hm3_loss1)
+
+        tf.summary.scalar('GNN1/um_loss', um_loss2)
+        tf.summary.scalar('GNN1/hm_loss', hm_loss2)
+        tf.summary.scalar('GNN1/hm3_loss', hm3_loss2)
+
+        tf.summary.scalar('GNN2/um_loss', um_loss3)
+        tf.summary.scalar('GNN2/hm_loss', hm_loss3)
+        tf.summary.scalar('GNN2/hm3_loss', hm3_loss3)
+
+        # to visualize the training error,
         # only pick the first three for tensorboard visualization
-        est_hms = est_hm_list[-1][0:3,:,:,:]
-        est_ums = est_um_list[-1][0:3,:,:,:]
-        est_hm3s = est_hm3_list[-1][0:3,:,:,:]
-        tiny_normed_dms = tiny_normed_dms[0:3,:,:,:]
-        cfgs = cfgs[0:3,:]
-        coms = coms[0:3,:]
-        dms = dms[0:3,:,:,:]
-        est_oms = self._resume_om(est_hm3s, est_ums)
+        for i in range(3):
+            if i==0:
+                est_hm_list = est_hm_list1
+                est_um_list = est_um_list1
+                est_hm3_list = est_hm3_list1
+            elif i==1:
+                est_hm_list = est_hm_list2
+                est_um_list = est_um_list2
+                est_hm3_list = est_hm3_list2
+            else:
+                est_hm_list = est_hm_list3
+                est_um_list = est_um_list3
+                est_hm3_list = est_hm3_list3
+            est_hms = est_hm_list[-1][0:3,:,:,:]
+            est_ums = est_um_list[-1][0:3,:,:,:]
+            est_hm3s = est_hm3_list[-1][0:3,:,:,:]
+            tiny_normed_dms = tiny_normed_dms[0:3,:,:,:]
+            cfgs = cfgs[0:3,:]
+            coms = coms[0:3,:]
+            dms = dms[0:3,:,:,:]
+            est_oms = self._resume_om(est_hm3s, est_ums)
 
-        # get point estimation
-        est_normed_poses = self._xyz_estimation(est_hms, est_oms, est_hm3s, tiny_normed_dms, cfgs, coms)
-        est_normed_poses = tf.reshape(est_normed_poses,
-                                      (est_normed_poses.get_shape()[0].value, -1))
-        xyz_pts = unnorm_xyz_pose(est_normed_poses, coms)
+            # get point estimation
+            est_normed_poses = self._xyz_estimation(est_hms, est_oms, est_hm3s, tiny_normed_dms, cfgs, coms)
+            est_normed_poses = tf.reshape(est_normed_poses,
+                                          (est_normed_poses.get_shape()[0].value, -1))
+            xyz_pts = unnorm_xyz_pose(est_normed_poses, coms)
 
-        # 2d joint detection
-        def to_uvd_fn(elem):
-            xyz_pt, cfg = elem[0], elem[1]
-            return [data.util.xyz2uvd_op(xyz_pt, cfg), cfg]
-        uvd_pts, _ = tf.map_fn(to_uvd_fn, [xyz_pts, cfgs])
-        resized_hms = tf.image.resize_images(est_hms, (self._input_height, self._input_width), 2)
-        hm_uvd_pts, _ = self._uvd_estimation_op(resized_hms, tf.ones_like(resized_hms))
+            # 2d joint detection
+            def to_uvd_fn(elem):
+                xyz_pt, cfg = elem[0], elem[1]
+                return [data.util.xyz2uvd_op(xyz_pt, cfg), cfg]
+            uvd_pts, _ = tf.map_fn(to_uvd_fn, [xyz_pts, cfgs])
+            resized_hms = tf.image.resize_images(est_hms, (self._input_height, self._input_width), 2)
+            hm_uvd_pts, _ = self._uvd_estimation_op(resized_hms, tf.ones_like(resized_hms))
 
-        # for visualization
-        gt_xy_angle = self._vis_um_xy(gt_ums)
-        gt_z_angle = self._vis_um_z(gt_ums)
-        est_xy_angle = self._vis_um_xy(est_ums)
-        est_z_angle = self._vis_um_z(est_ums)
+            # for visualization
+            gt_xy_angle = self._vis_um_xy(gt_ums)
+            gt_z_angle = self._vis_um_z(gt_ums)
+            est_xy_angle = self._vis_um_xy(est_ums)
+            est_z_angle = self._vis_um_z(est_ums)
 
-        if FLAGS.debug_level > 0:
-            tf.summary.image('tra_dm/', dms)
-            tf.summary.image('tra_pts/', tf_jointplot_wrapper(tf.squeeze(dms,axis=-1), 
+            if i==0:
+                tf.summary.image('tra_dm/', dms)
+
+            tf.summary.image(str(i)+'/uvd_pts/', tf_jointplot_wrapper(tf.squeeze(dms,axis=-1),
                                                               tf.reshape(uvd_pts, (3,-1,3))))
-            tf.summary.image('tra_pt_hm/', tf_jointplot_wrapper(tf.squeeze(dms, axis=-1),
+            tf.summary.image(str(i)+'/hm_uvd_pts/', tf_jointplot_wrapper(tf.squeeze(dms, axis=-1),
                                                                 tf.reshape(hm_uvd_pts, (3,-1,3))))
-        if FLAGS.debug_level > 1:
-            tf.summary.image('tra_hm_est_0/', tf_heatmap_wrapper(est_hms[:,:,:,0]))
-            tf.summary.image('tra_hm_gt_0/', tf_heatmap_wrapper(gt_hms[:,:,:,0]))
-            tf.summary.image('tra_3d_hm_est_0/', tf_heatmap_wrapper(est_hm3s[:,:,:,0]))
-            tf.summary.image('tra_3d_hm_gt_0/', tf_heatmap_wrapper(gt_hm3s[:,:,:,0]))
-            tf.summary.image('tra_um_xy_gt_0', tf_heatmap_wrapper(gt_xy_angle[:,:,:,0]))
-            tf.summary.image('tra_um_z_gt_0', tf_heatmap_wrapper(gt_z_angle[:,:,:,0]))
-            tf.summary.image('tra_um_xy_est_0', tf_heatmap_wrapper(est_xy_angle[:,:,:,0]))
-            tf.summary.image('tra_um_z_est_0', tf_heatmap_wrapper(est_z_angle[:,:,:,0]))
+            tf.summary.image(str(i)+'/hm_est/', tf_heatmap_wrapper(est_hms[:,:,:,0]))
+            tf.summary.image(str(i)+'/hm_gt/', tf_heatmap_wrapper(gt_hms[:,:,:,0]))
+            tf.summary.image(str(i)+'/3d_hm_est/', tf_heatmap_wrapper(est_hm3s[:,:,:,0]))
+            tf.summary.image(str(i)+'/3d_hm_gt/', tf_heatmap_wrapper(gt_hm3s[:,:,:,0]))
 
-        if FLAGS.debug_level > 2:
-            tf.summary.image('tra_hm_gt_1/', tf_heatmap_wrapper(gt_hms[:,:,:,5]))
-            tf.summary.image('tra_hm_est_1/', tf_heatmap_wrapper(est_hms[:,:,:,5]))
-            tf.summary.image('tra_3d_hm_est_1/', tf_heatmap_wrapper(est_hm3s[:,:,:,5]))
-            tf.summary.image('tra_3d_hm_gt_1/', tf_heatmap_wrapper(gt_hm3s[:,:,:,5]))
-            tf.summary.image('tra_um_xy_est_1', tf_heatmap_wrapper(est_xy_angle[:,:,:,5]))
-            tf.summary.image('tra_um_z_est_1', tf_heatmap_wrapper(est_z_angle[:,:,:,5]))
-            tf.summary.image('tra_um_xy_gt_1', tf_heatmap_wrapper(gt_xy_angle[:,:,:,5]))
-            tf.summary.image('tra_um_z_gt_1', tf_heatmap_wrapper(gt_z_angle[:,:,:,5]))
 
-        return total_loss 
+        return total_loss
+
 
     def opt(self, lr):
         '''return the optimizer of the model
@@ -448,11 +490,11 @@ class JointDetectionModel(object):
         normed_dms = data.preprocess.norm_dm(dms, coms)
         end_points = self.inference(normed_dms, cfgs, coms, reuse_variables=reuse_variables, is_training=False)
 
-        est_hms = end_points['hm_outs'][-1]
-        
+        est_hms = end_points['hm_outs_GNN5'][-1]
+
         tiny_normed_dms = tf.image.resize_images(normed_dms, (self._output_height, self._output_width), 2)
-        est_ums = end_points['um_outs'][-1]
-        est_hm3s = end_points['hm3_outs'][-1]
+        est_ums = end_points['um_outs_GNN5'][-1]
+        est_hm3s = end_points['hm3_outs_GNN5'][-1]
 
         est_oms = self._resume_om(est_hm3s, est_ums)
 
@@ -902,12 +944,12 @@ if __name__ == '__main__':
         import data.msra
         dataset = data.msra.MsraDataset('training', FLAGS.pid)
         val_dataset = data.msra.MsraDataset('testing', FLAGS.pid)
-    # 训练使用
-    # --dataset nyu --batch_size 24 --num_stack 2 --num_fea 128 --debug_level 2 --is_train True
-    # 测试使用
-    # --dataset nyu --batch_size 3 --num_stack 2 --num_fea 128 --debug_level 2 --is_train False
-    # FLAGS.is_train = False
+        # 训练使用
+        # --dataset nyu --batch_size 28 --num_stack 2 --num_fea 128 --debug_level 2 --is_train True
+        # 测试使用
+        # --dataset nyu --batch_size 3 --num_stack 2 --num_fea 128 --debug_level 2 --is_train False
+    FLAGS.is_train = False
     if FLAGS.is_train:
-        run_train(dataset, val_dataset, -1)
+        run_train(dataset, val_dataset, 24101)
     else:
-        run_test(dataset, val_dataset, -1)
+        run_test(dataset, val_dataset, 42131)

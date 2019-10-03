@@ -116,13 +116,11 @@ def train(model, restore_step=None):
 
         sess.run(init_op)
         start_step = 0
-        print_num_of_total_parameters(True)
-
         # to resume the training
         if restore_step is not None:# and restore_step>0:
 
             # # 得到该网络中，所有可以加载的参数
-            retrain = True
+            retrain = False
             if retrain:
                 variables = tf.contrib.framework.get_variables_to_restore()
                 # 删除output层中的参数
@@ -137,6 +135,7 @@ def train(model, restore_step=None):
                 checkpoint_path = os.path.join(model.train_dir, 'model.ckpt-%d'%restore_step)
                 saver.restore(sess, checkpoint_path)
                 start_step = restore_step
+                print('[test_model]model has been resotored from %s' % checkpoint_path)
 
         tf.train.start_queue_runners(sess=sess)
 
@@ -185,36 +184,11 @@ def train(model, restore_step=None):
                 if not os.path.exists(model.train_dir):
                     os.makedirs(model.train_dir)
                 checkpoint_path = os.path.join(model.train_dir, 'model.ckpt')
-                saver.save(sess, checkpoint_path, global_step=step)
+                saver.save(sess, checkpoint_path, global_step=step+1)
                 print('model has been saved to %s\n'%checkpoint_path)
                 f.write('model has been saved to %s\n'%checkpoint_path)
                 f.flush()
 
         print('finish train')
         f.close()
-import logging
-def print_num_of_total_parameters(output_detail=False, output_to_logging=False):
-	total_parameters = 0
-	parameters_string = ""
-
-	for variable in tf.trainable_variables():
-
-		shape = variable.get_shape()
-		variable_parameters = 1
-		for dim in shape:
-			variable_parameters *= dim.value
-		total_parameters += variable_parameters
-		if len(shape) == 1:
-			parameters_string += ("%s %d,  \n" % (variable.name, variable_parameters))
-		else:
-			parameters_string += ("%s %s=%d,  \n" % (variable.name, str(shape), variable_parameters))
-
-	if output_to_logging:
-		if output_detail:
-			logging.info(parameters_string)
-		logging.info("Total %d variables, %s params" % (len(tf.trainable_variables()), "{:,}".format(total_parameters)))
-	else:
-		if output_detail:
-			print(parameters_string)
-		print("Total %d variables, %s params" % (len(tf.trainable_variables()), "{:,}".format(total_parameters)))
 

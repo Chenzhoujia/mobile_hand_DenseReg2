@@ -29,10 +29,25 @@ def test(model, selected_step):
         sess.run(init_op)
 
         if selected_step is not None:
-            checkpoint_path = os.path.join(model.train_dir, 'model.ckpt-%d'%selected_step)
-            saver = tf.train.Saver(tf.global_variables())
-            saver.restore(sess, checkpoint_path)
-            print('[test_model]model has been resotored from %s'%checkpoint_path)
+
+            # # 得到该网络中，所有可以加载的参数
+            retrain = False
+            if retrain:
+                variables = tf.contrib.framework.get_variables_to_restore()
+                # 删除output层中的参数
+                variables_to_resotre = [v for v in variables if 'GNN' not in v.name]
+                # 构建这部分参数的saver
+                saver = tf.train.Saver(variables_to_resotre)
+                checkpoint_path = os.path.join(model.train_dir, 'model.ckpt-%d' % selected_step)
+                saver.restore(sess, checkpoint_path)
+                # 恢复saver
+                saver = tf.train.Saver(tf.global_variables())
+                print('[test_model]model has been resotored from %s' % checkpoint_path)
+            else:
+                checkpoint_path = os.path.join(model.train_dir, 'model.ckpt-%d'%selected_step)
+                saver = tf.train.Saver(tf.global_variables())
+                saver.restore(sess, checkpoint_path)
+                print('[test_model]model has been resotored from %s'%checkpoint_path)
 
         tf.train.start_queue_runners(sess=sess)
         summary_writer = tf.summary.FileWriter(
