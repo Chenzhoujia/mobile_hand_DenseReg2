@@ -196,7 +196,7 @@ def detect_net(dm_inputs, cfgs, coms, num_jnt, is_training=True, scope=''):
             # hm 3次
             cur_node_representations = hm_out_in
             last_residual_representations = tf.zeros_like(cur_node_representations)
-            for layer_idx in range(3):
+            for layer_idx in range(6):
                 CAM_num = CAM_num + 1
                 with tf.variable_scope('GNN_' + str(layer_idx) + '_' + str(CAM_num)):
 
@@ -220,7 +220,7 @@ def detect_net(dm_inputs, cfgs, coms, num_jnt, is_training=True, scope=''):
                         learnable_Adj, uvd)
                     cur_node_representations = tf.contrib.layers.layer_norm(cur_node_representations)
 
-                    if layer_idx == 1 or layer_idx == 2:
+                    if layer_idx == 2 or layer_idx == 5:
                         output_list.append(cur_node_representations)
 
             end_points['hm_outs_GNN2'].append(output_list[0])
@@ -229,7 +229,7 @@ def detect_net(dm_inputs, cfgs, coms, num_jnt, is_training=True, scope=''):
             # hm3 2次
             cur_node_representations = hm3_out_in
             last_residual_representations = tf.zeros_like(cur_node_representations)
-            for layer_idx in range(2):
+            for layer_idx in range(4):
                 CAM_num = CAM_num + 1
                 with tf.variable_scope('GNN_' + str(layer_idx) + '_' + str(CAM_num)):
 
@@ -253,19 +253,18 @@ def detect_net(dm_inputs, cfgs, coms, num_jnt, is_training=True, scope=''):
                         learnable_Adj, uvd)
                     cur_node_representations = tf.contrib.layers.layer_norm(cur_node_representations)
 
-                    if layer_idx == 0 or layer_idx == 1:
+                    if layer_idx == 1 or layer_idx == 3:
                         output_list.append(cur_node_representations)
 
             end_points['hm3_outs_GNN2'].append(output_list[2])
             end_points['hm3_outs_GNN5'].append(output_list[3])
 
             # um 2次
-            with tf.variable_scope('GNN_no_local_um1'):
-                um_out = no_local(um_out)
-                output_list.append(um_out)
-            with tf.variable_scope('GNN_no_local_um2'):
-                um_out = no_local(um_out)
-                output_list.append(um_out)
+            for layer_idx in range(4):
+                with tf.variable_scope('GNN_no_local_um'+str(layer_idx+1)):
+                    um_out = no_local(um_out)
+                    if layer_idx == 1 or layer_idx == 3:
+                        output_list.append(um_out)
             end_points['um_outs_GNN2'].append(output_list[4])
             end_points['um_outs_GNN5'].append(output_list[5])
 

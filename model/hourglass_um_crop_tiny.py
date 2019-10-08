@@ -66,7 +66,7 @@ MAXIMUM_DEPTH = 600.0
 class JointDetectionModel(object):
     _moving_average_decay = 0.9999
     _batchnorm_moving_average_decay = 0.9997
-    _init_lr = 0.001  * 1e7
+    _init_lr = 0.001
     if FLAGS.dataset == 'nyu':
         _num_epochs_per_decay = 10
     elif FLAGS.dataset == 'msra':
@@ -950,6 +950,6 @@ if __name__ == '__main__':
         # --dataset nyu --batch_size 3 --num_stack 2 --num_fea 128 --debug_level 2 --is_train False
     FLAGS.is_train = False
     if FLAGS.is_train:
-        run_train(dataset, val_dataset, 24101)
+        run_train(dataset, val_dataset,16602)
     else:
-        run_test(dataset, val_dataset, 42131)
+        run_test(dataset, val_dataset, 49154)
