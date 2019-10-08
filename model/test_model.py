@@ -72,6 +72,7 @@ def test(model, selected_step):
         test_num = 0
         step = 0
         maxJntError = []
+        meanJntError = []
         while True:
             start_time = time.time()
             try:
@@ -84,7 +85,7 @@ def test(model, selected_step):
             
             for xyz_val, gt_val, name_val in zip(xyz_vals, gt_vals, name_vals):
                 maxJntError.append(Evaluation.maxJntError(xyz_val, gt_val))
-
+                meanJntError.append(Evaluation.meanJntError(xyz_val, gt_val))
                 xyz_val = xyz_val.tolist()
                 res_str = '%s\t%s\n'%(name_val, '\t'.join(format(pt, '.4f') for pt in xyz_val))
                 res_str = res_str.replace('/', '\\')
@@ -100,6 +101,10 @@ def test(model, selected_step):
             
             if step%101 == 0:
                 print('[%s]: %d/%d computed, with %.2fs'%(datetime.now(), step, model.max_steps, duration))
+                mean_error = str(mean(meanJntError))
+                num_test = str(len(meanJntError))
+                print("mean_error"+mean_error)
+                print("num_test"+num_test)
 
             step += 1
 
@@ -107,3 +112,5 @@ def test(model, selected_step):
         print('finish test')
         f.close()
         Evaluation.plotError(maxJntError, 'result.txt')
+def mean(a):
+    return sum(a) / len(a)

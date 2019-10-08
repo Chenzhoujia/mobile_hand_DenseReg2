@@ -1,6 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy.linalg as alg
-
+import numpy as np
 class Evaluation(object):
     def __init__(self):
         pass
@@ -15,7 +15,11 @@ class Evaluation(object):
     def meanJntError(cls_obj, skel1, skel2):
         diff = skel1.reshape(-1,3) - skel2.reshape(-1,3)
         diff = alg.norm(diff, axis=1)
-        return diff.mean() 
+        mean = np.nanmean(diff)
+        if np.isnan(mean):
+            print("get nan return 7.0")
+            return 7.0
+        return mean
 
     
     @classmethod

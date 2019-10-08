@@ -952,4 +952,4 @@ if __name__ == '__main__':
     if FLAGS.is_train:
         run_train(dataset, val_dataset,16602)
     else:
-        run_test(dataset, val_dataset, 49154)
+        run_test(dataset, val_dataset, 42131)
