@@ -66,7 +66,7 @@ MAXIMUM_DEPTH = 600.0
 class JointDetectionModel(object):
     _moving_average_decay = 0.9999
     _batchnorm_moving_average_decay = 0.9997
-    _init_lr = 0.001
+    _init_lr = 0.001 * 1e5
     if FLAGS.dataset == 'nyu':
         _num_epochs_per_decay = 10
     elif FLAGS.dataset == 'msra':
@@ -360,29 +360,29 @@ class JointDetectionModel(object):
         # heatmap loss
         est_hm_list1 = end_points['hm_outs']
         hm_losses1 = [tf.nn.l2_loss(est_hms-gt_hms) for est_hms in est_hm_list1]
-        est_hm_list2 = end_points['hm_outs_GNN2']*2
-        hm_losses2 = [tf.nn.l2_loss(est_hms-gt_hms) for est_hms in est_hm_list2]
-        est_hm_list3 = end_points['hm_outs_GNN5']*2
-        hm_losses3 = [tf.nn.l2_loss(est_hms-gt_hms) for est_hms in est_hm_list3]
+        # est_hm_list2 = end_points['hm_outs_GNN2']*2
+        # hm_losses2 = [tf.nn.l2_loss(est_hms-gt_hms) for est_hms in est_hm_list2]
+        # est_hm_list3 = end_points['hm_outs_GNN5']*2
+        # hm_losses3 = [tf.nn.l2_loss(est_hms-gt_hms) for est_hms in est_hm_list3]
 
 
         # 3D heatmap loss
         est_hm3_list1 = end_points['hm3_outs']
         hm3_losses1 = [tf.nn.l2_loss(est_hm3-gt_hm3s) for est_hm3 in est_hm3_list1]
-        est_hm3_list2 = end_points['hm3_outs_GNN2']*2
-        hm3_losses2 = [tf.nn.l2_loss(est_hm3-gt_hm3s) for est_hm3 in est_hm3_list2]
-        est_hm3_list3 = end_points['hm3_outs_GNN5']*2
-        hm3_losses3 = [tf.nn.l2_loss(est_hm3-gt_hm3s) for est_hm3 in est_hm3_list3]
+        # est_hm3_list2 = end_points['hm3_outs_GNN2']*2
+        # hm3_losses2 = [tf.nn.l2_loss(est_hm3-gt_hm3s) for est_hm3 in est_hm3_list2]
+        # est_hm3_list3 = end_points['hm3_outs_GNN5']*2
+        # hm3_losses3 = [tf.nn.l2_loss(est_hm3-gt_hm3s) for est_hm3 in est_hm3_list3]
 
         # offsetmap loss
         # we only consider the nearby point offset maps
         # in order to make the oms loss on the same scale w.r.t. hms loss
         est_um_list1 = end_points['um_outs']
         um_losses1 = [tf.nn.l2_loss(est_ums-gt_ums) for est_ums in est_um_list1]
-        est_um_list2 = end_points['um_outs_GNN2']*2
-        um_losses2 = [tf.nn.l2_loss(est_ums-gt_ums) for est_ums in est_um_list2]
-        est_um_list3 = end_points['um_outs_GNN5']*2
-        um_losses3 = [tf.nn.l2_loss(est_ums-gt_ums) for est_ums in est_um_list3]
+        # est_um_list2 = end_points['um_outs_GNN2']*2
+        # um_losses2 = [tf.nn.l2_loss(est_ums-gt_ums) for est_ums in est_um_list2]
+        # est_um_list3 = end_points['um_outs_GNN5']*2
+        # um_losses3 = [tf.nn.l2_loss(est_ums-gt_ums) for est_ums in est_um_list3]
 
 
         # add the weight decay loss
@@ -391,45 +391,47 @@ class JointDetectionModel(object):
         um_loss1 = tf.add_n(um_losses1, 'um_loss1')
         hm3_loss1 = tf.add_n(hm3_losses1, 'hm3_loss1')
 
-        hm_loss2 = tf.add_n(hm_losses2, 'hm_loss2')
-        um_loss2 = tf.add_n(um_losses2, 'um_loss2')
-        hm3_loss2 = tf.add_n(hm3_losses2, 'hm3_loss2')
+        # hm_loss2 = tf.add_n(hm_losses2, 'hm_loss2')
+        # um_loss2 = tf.add_n(um_losses2, 'um_loss2')
+        # hm3_loss2 = tf.add_n(hm3_losses2, 'hm3_loss2')
+        #
+        # hm_loss3 = tf.add_n(hm_losses3, 'hm_loss3')
+        # um_loss3 = tf.add_n(um_losses3, 'um_loss3')
+        # hm3_loss3 = tf.add_n(hm3_losses3, 'hm3_loss3')
 
-        hm_loss3 = tf.add_n(hm_losses3, 'hm_loss3')
-        um_loss3 = tf.add_n(um_losses3, 'um_loss3')
-        hm3_loss3 = tf.add_n(hm3_losses3, 'hm3_loss3')
+        # total_loss = (hm_loss1 + um_loss1 + hm3_loss1+
+        #               hm_loss2 + um_loss2 + hm3_loss2+
+        #               hm_loss3 + um_loss3 + hm3_loss3)/3 +reg_loss
 
-        total_loss = (hm_loss1 + um_loss1 + hm3_loss1+
-                      hm_loss2 + um_loss2 + hm3_loss2+
-                      hm_loss3 + um_loss3 + hm3_loss3)/3 +reg_loss
+        total_loss = (hm_loss1 + um_loss1 + hm3_loss1)/3 +reg_loss
 
         tf.summary.scalar('dir/um_loss', um_loss1)
         tf.summary.scalar('dir/hm_loss', hm_loss1)
         tf.summary.scalar('dir/hm3_loss', hm3_loss1)
 
-        tf.summary.scalar('GNN1/um_loss', um_loss2)
-        tf.summary.scalar('GNN1/hm_loss', hm_loss2)
-        tf.summary.scalar('GNN1/hm3_loss', hm3_loss2)
-
-        tf.summary.scalar('GNN2/um_loss', um_loss3)
-        tf.summary.scalar('GNN2/hm_loss', hm_loss3)
-        tf.summary.scalar('GNN2/hm3_loss', hm3_loss3)
+        # tf.summary.scalar('GNN1/um_loss', um_loss2)
+        # tf.summary.scalar('GNN1/hm_loss', hm_loss2)
+        # tf.summary.scalar('GNN1/hm3_loss', hm3_loss2)
+        #
+        # tf.summary.scalar('GNN2/um_loss', um_loss3)
+        # tf.summary.scalar('GNN2/hm_loss', hm_loss3)
+        # tf.summary.scalar('GNN2/hm3_loss', hm3_loss3)
 
         # to visualize the training error,
         # only pick the first three for tensorboard visualization
-        for i in range(3):
-            if i==0:
-                est_hm_list = est_hm_list1
-                est_um_list = est_um_list1
-                est_hm3_list = est_hm3_list1
-            elif i==1:
-                est_hm_list = est_hm_list2
-                est_um_list = est_um_list2
-                est_hm3_list = est_hm3_list2
-            else:
-                est_hm_list = est_hm_list3
-                est_um_list = est_um_list3
-                est_hm3_list = est_hm3_list3
+        for i in range(1):
+            # if i==0:
+            est_hm_list = est_hm_list1
+            est_um_list = est_um_list1
+            est_hm3_list = est_hm3_list1
+            # elif i==1:
+            #     est_hm_list = est_hm_list2
+            #     est_um_list = est_um_list2
+            #     est_hm3_list = est_hm3_list2
+            # else:
+            #     est_hm_list = est_hm_list3
+            #     est_um_list = est_um_list3
+            #     est_hm3_list = est_hm3_list3
             est_hms = est_hm_list[-1][0:3,:,:,:]
             est_ums = est_um_list[-1][0:3,:,:,:]
             est_hm3s = est_hm3_list[-1][0:3,:,:,:]
@@ -490,11 +492,14 @@ class JointDetectionModel(object):
         normed_dms = data.preprocess.norm_dm(dms, coms)
         end_points = self.inference(normed_dms, cfgs, coms, reuse_variables=reuse_variables, is_training=False)
 
-        est_hms = end_points['hm_outs_GNN5'][-1]
+        # est_hms = end_points['hm_outs_GNN5'][-1]
+        est_hms = end_points['hm_outs'][-1]
 
         tiny_normed_dms = tf.image.resize_images(normed_dms, (self._output_height, self._output_width), 2)
-        est_ums = end_points['um_outs_GNN5'][-1]
-        est_hm3s = end_points['hm3_outs_GNN5'][-1]
+        # est_ums = end_points['um_outs_GNN5'][-1]
+        # est_hm3s = end_points['hm3_outs_GNN5'][-1]
+        est_ums = end_points['um_outs'][-1]
+        est_hm3s = end_points['hm3_outs'][-1]
 
         est_oms = self._resume_om(est_hm3s, est_ums)
 
@@ -861,37 +866,37 @@ class JointDetectionModel(object):
         '''
         # during training
         if names is None:
-            f = open(self._log_path, 'a')
-            summary_str, gt_vals, xyz_vals = sess.run(
-                [self.val_summary_op, self.gt_pose, self.xyz_pts])
-            summary_writer.add_summary(summary_str, step)
-
-            maxJntError=[]
-            f.write('[%s] step %d\n'%(datetime.now(), step))
-            for xyz_val, gt_val in zip(xyz_vals, gt_vals):
-                maxJntError.append(Evaluation.maxJntError(xyz_val, gt_val))
-                diff = (xyz_val-gt_val).reshape(-1,3)
-                dist = alg.norm(diff, axis=1).reshape(-1,1)
-                error_mat = np.concatenate((diff, dist), axis=1)
-                print(error_mat)
-                f.write(np.array_str(error_mat)+'\n')
-            print('validate error:', maxJntError)
-            f.write('validation error: {}\n'.format(maxJntError))
-            f.flush()
-            f.close()
-            return
+            #f = open(self._log_path, 'a')
+            gt_vals, xyz_vals = sess.run(
+                [ self.gt_pose, self.xyz_pts])
+            # summary_writer.add_summary(summary_str, step)
+            #
+            # maxJntError=[]
+            # f.write('[%s] step %d\n'%(datetime.now(), step))
+            # for xyz_val, gt_val in zip(xyz_vals, gt_vals):
+            #     maxJntError.append(Evaluation.maxJntError(xyz_val, gt_val))
+            #     diff = (xyz_val-gt_val).reshape(-1,3)
+            #     dist = alg.norm(diff, axis=1).reshape(-1,1)
+            #     error_mat = np.concatenate((diff, dist), axis=1)
+            #     print(error_mat)
+            #     f.write(np.array_str(error_mat)+'\n')
+            # #print('validate error:', maxJntError)
+            # f.write('validation error: {}\n'.format(maxJntError))
+            # f.flush()
+            # f.close()
+            return gt_vals, xyz_vals
 
         if step%100 == 0:
-            summary_str, xyz_vals, gt_vals, names = sess.run(
-                [self.val_summary_op, self.xyz_pts, self.gt_pose, names])
-            summary_writer.add_summary(summary_str, step)
+            xyz_vals, gt_vals, names = sess.run(
+                [self.xyz_pts, self.gt_pose, names])
+            #summary_writer.add_summary(summary_str, step)
 
             maxJntError=[]
             for xyz_val, gt_val in zip(xyz_vals, gt_vals):
                 maxJntError.append(Evaluation.maxJntError(xyz_val, gt_val))
                 diff = (xyz_val-gt_val).reshape(-1,3)
                 dist = alg.norm(diff, axis=1).reshape(-1,1)
-                print(np.concatenate((diff, dist), axis=1))
+                #print(np.concatenate((diff, dist), axis=1))
             print('[step: %d]test error:'%step, maxJntError)
             print('---\n')
             return gt_vals, xyz_vals, names
@@ -948,8 +953,8 @@ if __name__ == '__main__':
         # --dataset nyu --batch_size 28 --num_stack 2 --num_fea 128 --debug_level 2 --is_train True
         # 测试使用
         # --dataset nyu --batch_size 3 --num_stack 2 --num_fea 128 --debug_level 2 --is_train False
-    FLAGS.is_train = False
+    # FLAGS.is_train = False
     if FLAGS.is_train:
-        run_train(dataset, val_dataset,16602)
+        run_train(dataset, val_dataset,503)
     else:
-        run_test(dataset, val_dataset, 42131)
+        run_test(dataset, val_dataset, 503)

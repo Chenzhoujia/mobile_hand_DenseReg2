@@ -6,9 +6,9 @@ import network.slim as slim
 import numpy as np
 import time, os
 from datetime import datetime
-
+from data.evaluation import Evaluation
 FLAGS = tf.app.flags.FLAGS
-
+from tqdm import tqdm
 def _average_gradients(tower_grads):
     '''calcualte the average gradient for each shared variable across all towers on multi gpus
     Args:
@@ -61,7 +61,7 @@ def train(model, restore_step=None):
 
         if model.is_validate:
             # set batch_size as 3 since tensorboard visualization
-            val_batches = model.batch_input(model.val_dataset, 3)
+            val_batches = model.batch_input(model.val_dataset)
             model.test(*val_batches) # don't need the name
 
         batchnorm_updates = tf.get_collection(slim.ops.UPDATE_OPS_COLLECTION)
@@ -149,7 +149,8 @@ def train(model, restore_step=None):
 
         log_path = os.path.join(model.train_dir, 'training_log.txt')
         f = open(log_path, 'a')
-
+        meanJntError_min = float('Inf')
+        meanJntError_all = float('Inf')
         for step in range(start_step, model.max_steps):
             if f.closed:
                 f = open(log_path, 'a')
@@ -177,18 +178,47 @@ def train(model, restore_step=None):
                 summary_writer.add_summary(summary_str, step)
 
 
-            if step%40 == 0 and hasattr(model, 'do_test'):
-                model.do_test(sess, summary_writer, step)
+            if step%1000 == 0 and hasattr(model, 'do_test'):
+            #     model.do_test(sess, summary_writer, step)
+                print('[test_model]begin test')
+                meanJntError = []
+                total_test_num = model.val_dataset.exact_num
+                for step_ in tqdm(range(276)):
+                    start_time = time.time()
+                    try:
+                        gt_vals, xyz_vals = model.do_test(sess, summary_writer, step_)
+                    except tf.errors.OutOfRangeError:
+                        print('run out of range')
+                        break
 
-            if step%100 == 0 or (step+1) == model.max_steps:
+                    duration = time.time() - start_time
+
+                    for xyz_val, gt_val in zip(xyz_vals, gt_vals):
+                        meanJntError.append(Evaluation.meanJntError(xyz_val, gt_val))
+                    f.flush()
+
+                    if step_ % 11 == 0:
+                        print('[%s]: %d/%d computed, with %.2fs' % (datetime.now(), step_, model.max_steps, duration))
+                        mean_error = str(mean(meanJntError))
+                        num_test = str(len(meanJntError))
+                        print("mean_error" + mean_error)
+                        print("num_test" + num_test)
+                    step_ += 1
+                meanJntError_all = mean(meanJntError)
+                print('finish test')
+
+            if meanJntError_all < meanJntError_min:
+                meanJntError_min = meanJntError_all
+                print("meanJntError_min:"+str(meanJntError_min))
                 if not os.path.exists(model.train_dir):
                     os.makedirs(model.train_dir)
                 checkpoint_path = os.path.join(model.train_dir, 'model.ckpt')
-                saver.save(sess, checkpoint_path, global_step=step+1)
+                saver.save(sess, checkpoint_path, global_step=step+3)
                 print('model has been saved to %s\n'%checkpoint_path)
                 f.write('model has been saved to %s\n'%checkpoint_path)
                 f.flush()
 
         print('finish train')
         f.close()
-
+def mean(a):
+    return sum(a) / len(a)

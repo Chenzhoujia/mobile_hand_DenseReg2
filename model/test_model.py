@@ -108,7 +108,8 @@ def test(model, selected_step):
 
             step += 1
 
-
+        meanJntError_all = mean(meanJntError)
+        print("meanJntError_min: " + str(meanJntError_all))
         print('finish test')
         f.close()
         Evaluation.plotError(maxJntError, 'result.txt')

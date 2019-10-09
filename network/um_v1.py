@@ -178,6 +178,51 @@ def detect_net(dm_inputs, cfgs, coms, num_jnt, is_training=True, scope=''):
                 end_points['hm3_outs'].append(hm3_out)
                 end_points['um_outs'].append(um_out)
 
+                # 用图网络，对[hm_out, hm3_out, um_out进行更改
+                cur_node_representations = hm_out
+                CAM_num = CAM_num + 1
+                with tf.variable_scope('GNN_' + str(i) + '_' + str(CAM_num)):
+
+                    weights_initializer = tf.truncated_normal_initializer(stddev=0.01)
+                    l2_regularizer = losses.l2_regularizer(0.0005)
+                    learnable_Adj = variables.variable('learnable_adj_weights_' + str(CAM_num),
+                                                       shape=[14, 14],
+                                                       initializer=weights_initializer,
+                                                       regularizer=l2_regularizer,
+                                                       trainable=True,
+                                                       restore=True)
+
+                    cur_node_representations = _apply_gnn_layer(
+                        cur_node_representations,
+                        learnable_Adj, uvd)
+                    cur_node_representations = tf.contrib.layers.layer_norm(cur_node_representations)
+                hm_out = cur_node_representations
+                end_points['hm_outs'].append(hm_out)
+
+                cur_node_representations = hm3_out
+                CAM_num = CAM_num + 1
+                with tf.variable_scope('GNN_' + str(i) + '_' + str(CAM_num)):
+
+                    weights_initializer = tf.truncated_normal_initializer(stddev=0.01)
+                    l2_regularizer = losses.l2_regularizer(0.0005)
+                    learnable_Adj = variables.variable('learnable_adj_weights_' + str(CAM_num),
+                                                       shape=[14, 14],
+                                                       initializer=weights_initializer,
+                                                       regularizer=l2_regularizer,
+                                                       trainable=True,
+                                                       restore=True)
+
+                    cur_node_representations = _apply_gnn_layer(
+                        cur_node_representations,
+                        learnable_Adj, uvd)
+                    cur_node_representations = tf.contrib.layers.layer_norm(cur_node_representations)
+                hm3_out = cur_node_representations
+                end_points['hm3_outs'].append(hm3_out)
+
+                with tf.variable_scope('GNN_no_local_um' + str(i)):
+                    um_out = no_local(um_out)
+                end_points['um_outs'].append(um_out)
+
                 if i < FLAGS.num_stack-1:
                     tmp_out = tf.concat([hm_out, hm3_out, um_out], axis=-1)
                     tmp_out_reshaped = ops.conv2d(tmp_out, FLAGS.num_fea, [1,1], stride=1,
@@ -186,90 +231,93 @@ def detect_net(dm_inputs, cfgs, coms, num_jnt, is_training=True, scope=''):
                     inter = ops.conv2d(ll, FLAGS.num_fea, [1,1], stride=1,
                                       batch_norm_params=None, 
                                       activation=None)
-
                     hg_ins = hg_ins + tmp_out_reshaped + inter
 
-            hm_out_in = hm_out
-            hm3_out_in = hm3_out
+        return end_points
 
-            output_list = []
-            # hm 3次
-            cur_node_representations = hm_out_in
-            last_residual_representations = tf.zeros_like(cur_node_representations)
-            for layer_idx in range(3):
-                CAM_num = CAM_num + 1
-                with tf.variable_scope('GNN_' + str(layer_idx) + '_' + str(CAM_num)):
+"""
+hm_out_in = hm_out
+hm3_out_in = hm3_out
 
-                    weights_initializer = tf.truncated_normal_initializer(stddev=0.01)
-                    l2_regularizer = losses.l2_regularizer(0.0005)
-                    learnable_Adj = variables.variable('learnable_adj_weights_' + str(CAM_num),
-                                                       shape=[14, 14],
-                                                       initializer=weights_initializer,
-                                                       regularizer=l2_regularizer,
-                                                       trainable=True,
-                                                       restore=True)
+output_list = []
+# hm 3次
+cur_node_representations = hm_out_in
+last_residual_representations = tf.zeros_like(cur_node_representations)
+for layer_idx in range(3):
+    CAM_num = CAM_num + 1
+    with tf.variable_scope('GNN_' + str(layer_idx) + '_' + str(CAM_num)):
 
-                    if layer_idx % 2 == 0:
-                        t = cur_node_representations
-                        if layer_idx > 0:
-                            cur_node_representations += last_residual_representations
-                            cur_node_representations /= 2
-                        last_residual_representations = t
-                    cur_node_representations = _apply_gnn_layer(
-                        cur_node_representations,
-                        learnable_Adj, uvd)
-                    cur_node_representations = tf.contrib.layers.layer_norm(cur_node_representations)
+        weights_initializer = tf.truncated_normal_initializer(stddev=0.01)
+        l2_regularizer = losses.l2_regularizer(0.0005)
+        learnable_Adj = variables.variable('learnable_adj_weights_' + str(CAM_num),
+                                           shape=[14, 14],
+                                           initializer=weights_initializer,
+                                           regularizer=l2_regularizer,
+                                           trainable=True,
+                                           restore=True)
 
-                    if layer_idx == 1 or layer_idx == 2:
-                        output_list.append(cur_node_representations)
+        if layer_idx % 2 == 0:
+            t = cur_node_representations
+            if layer_idx > 0:
+                cur_node_representations += last_residual_representations
+                cur_node_representations /= 2
+            last_residual_representations = t
+        cur_node_representations = _apply_gnn_layer(
+            cur_node_representations,
+            learnable_Adj, uvd)
+        cur_node_representations = tf.contrib.layers.layer_norm(cur_node_representations)
 
-            end_points['hm_outs_GNN2'].append(output_list[0])
-            end_points['hm_outs_GNN5'].append(output_list[1])
+        if layer_idx == 1 or layer_idx == 2:
+            output_list.append(cur_node_representations)
 
-            # hm3 2次
-            cur_node_representations = hm3_out_in
-            last_residual_representations = tf.zeros_like(cur_node_representations)
-            for layer_idx in range(2):
-                CAM_num = CAM_num + 1
-                with tf.variable_scope('GNN_' + str(layer_idx) + '_' + str(CAM_num)):
+end_points['hm_outs_GNN2'].append(output_list[0])
+end_points['hm_outs_GNN5'].append(output_list[1])
 
-                    weights_initializer = tf.truncated_normal_initializer(stddev=0.01)
-                    l2_regularizer = losses.l2_regularizer(0.0005)
-                    learnable_Adj = variables.variable('learnable_adj_weights_' + str(CAM_num),
-                                                       shape=[14, 14],
-                                                       initializer=weights_initializer,
-                                                       regularizer=l2_regularizer,
-                                                       trainable=True,
-                                                       restore=True)
+# hm3 2次
+cur_node_representations = hm3_out_in
+last_residual_representations = tf.zeros_like(cur_node_representations)
+for layer_idx in range(2):
+    CAM_num = CAM_num + 1
+    with tf.variable_scope('GNN_' + str(layer_idx) + '_' + str(CAM_num)):
 
-                    if layer_idx % 2 == 0:
-                        t = cur_node_representations
-                        if layer_idx > 0:
-                            cur_node_representations += last_residual_representations
-                            cur_node_representations /= 2
-                        last_residual_representations = t
-                    cur_node_representations = _apply_gnn_layer(
-                        cur_node_representations,
-                        learnable_Adj, uvd)
-                    cur_node_representations = tf.contrib.layers.layer_norm(cur_node_representations)
+        weights_initializer = tf.truncated_normal_initializer(stddev=0.01)
+        l2_regularizer = losses.l2_regularizer(0.0005)
+        learnable_Adj = variables.variable('learnable_adj_weights_' + str(CAM_num),
+                                           shape=[14, 14],
+                                           initializer=weights_initializer,
+                                           regularizer=l2_regularizer,
+                                           trainable=True,
+                                           restore=True)
 
-                    if layer_idx == 0 or layer_idx == 1:
-                        output_list.append(cur_node_representations)
+        if layer_idx % 2 == 0:
+            t = cur_node_representations
+            if layer_idx > 0:
+                cur_node_representations += last_residual_representations
+                cur_node_representations /= 2
+            last_residual_representations = t
+        cur_node_representations = _apply_gnn_layer(
+            cur_node_representations,
+            learnable_Adj, uvd)
+        cur_node_representations = tf.contrib.layers.layer_norm(cur_node_representations)
 
-            end_points['hm3_outs_GNN2'].append(output_list[2])
-            end_points['hm3_outs_GNN5'].append(output_list[3])
+        if layer_idx == 0 or layer_idx == 1:
+            output_list.append(cur_node_representations)
 
-            # um 2次
-            with tf.variable_scope('GNN_no_local_um1'):
-                um_out = no_local(um_out)
-                output_list.append(um_out)
-            with tf.variable_scope('GNN_no_local_um2'):
-                um_out = no_local(um_out)
-                output_list.append(um_out)
-            end_points['um_outs_GNN2'].append(output_list[4])
-            end_points['um_outs_GNN5'].append(output_list[5])
+end_points['hm3_outs_GNN2'].append(output_list[2])
+end_points['hm3_outs_GNN5'].append(output_list[3])
 
-            return end_points
+# um 2次
+with tf.variable_scope('GNN_no_local_um1'):
+    um_out = no_local(um_out)
+    output_list.append(um_out)
+with tf.variable_scope('GNN_no_local_um2'):
+    um_out = no_local(um_out)
+    output_list.append(um_out)
+end_points['um_outs_GNN2'].append(output_list[4])
+end_points['um_outs_GNN5'].append(output_list[5])
+
+return end_points
+"""
 def _apply_gnn_layer(node_embeddings_: tf.Tensor,
                       adjacency_lists: tf.Tensor,
                       uvd: tf.Tensor,
