@@ -93,13 +93,19 @@ def test(model, selected_step):
                 # vid.write(vis_val)
                 test_num += 1
                 if test_num >= total_test_num:
+                    meanJntError_all = mean(meanJntError)
+                    mean_error = str(mean(meanJntError))
+                    num_test = str(len(meanJntError))
+                    print("mean_error" + mean_error)
+                    print("num_test" + num_test)
                     print('finish test')
                     f.close()
                     Evaluation.plotError(maxJntError, err_path)
+
                     return
             f.flush()
             
-            if step%101 == 0:
+            if step%50 == 0:
                 print('[%s]: %d/%d computed, with %.2fs'%(datetime.now(), step, model.max_steps, duration))
                 mean_error = str(mean(meanJntError))
                 num_test = str(len(meanJntError))

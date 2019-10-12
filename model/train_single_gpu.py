@@ -149,7 +149,7 @@ def train(model, restore_step=None):
 
         log_path = os.path.join(model.train_dir, 'training_log.txt')
         f = open(log_path, 'a')
-        meanJntError_min = float('Inf')
+        meanJntError_min = 9.52535734
         meanJntError_all = float('Inf')
         for step in range(start_step, model.max_steps):
             if f.closed:
@@ -167,23 +167,25 @@ def train(model, restore_step=None):
             ave_loss /= accu_steps
             duration = time.time() - start_time
 
-            if step%5 == 0:
+            if step%20 == 0:
                 format_str = '[model/train_multi_gpu] %s: step %d/%d, loss = %.3f, %.3f sec/batch, %.3f sec/sample'
                 print(format_str%(datetime.now(), step, model.max_steps, ave_loss, duration, duration/(FLAGS.batch_size*accu_steps)))
                 f.write(format_str%(datetime.now(), step, model.max_steps, ave_loss, duration, duration/(FLAGS.batch_size*accu_steps))+'\n')
                 f.flush()
 
-            if step%20 == 0:
+            if step%40 == 0:
                 summary_str = sess.run(summary_op)
                 summary_writer.add_summary(summary_str, step)
 
 
-            if step%1000 == 0 and hasattr(model, 'do_test'):
+            if step%200 == 0 and hasattr(model, 'do_test') or ave_loss<8300:
             #     model.do_test(sess, summary_writer, step)
                 print('[test_model]begin test')
+                test_num = 0
+                step_ = 0
+                maxJntError = []
                 meanJntError = []
-                total_test_num = model.val_dataset.exact_num
-                for step_ in tqdm(range(276)):
+                while True:
                     start_time = time.time()
                     try:
                         gt_vals, xyz_vals = model.do_test(sess, summary_writer, step_)
@@ -195,17 +197,28 @@ def train(model, restore_step=None):
 
                     for xyz_val, gt_val in zip(xyz_vals, gt_vals):
                         meanJntError.append(Evaluation.meanJntError(xyz_val, gt_val))
+                        test_num += 1
+                        if test_num >= 8252:
+                            break
+                    if test_num >= 8252:
+                        meanJntError_all = mean(meanJntError)
+                        mean_error = str(mean(meanJntError))
+                        num_test = str(len(meanJntError))
+                        print("mean_error" + mean_error)
+                        print("num_test" + num_test)
+                        print('finish test')
+
+                        break
                     f.flush()
 
-                    if step_ % 11 == 0:
+                    if step_ % 50 == 0:
                         print('[%s]: %d/%d computed, with %.2fs' % (datetime.now(), step_, model.max_steps, duration))
                         mean_error = str(mean(meanJntError))
                         num_test = str(len(meanJntError))
                         print("mean_error" + mean_error)
                         print("num_test" + num_test)
+
                     step_ += 1
-                meanJntError_all = mean(meanJntError)
-                print('finish test')
 
             if meanJntError_all < meanJntError_min:
                 meanJntError_min = meanJntError_all
