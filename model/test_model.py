@@ -76,11 +76,21 @@ def test(model, selected_step):
         while True:
             start_time = time.time()
             try:
-                gt_vals, xyz_vals, name_vals = model.do_test(sess, summary_writer, step, names)
+                gt_vals, xyz_vals, valid_hms, name_vals = model.do_test(sess, summary_writer, step, names)
             except tf.errors.OutOfRangeError:
                 print('run out of range')
                 break
+            if b'depth_1_0005744.png' in name_vals:
+                # 保存变量
+                valid_hms_all = np.concatenate((np.expand_dims(valid_hms[0], axis=0),
+                                np.expand_dims(valid_hms[1], axis=0),
+                                np.expand_dims(valid_hms[2], axis=0),
+                                np.expand_dims(valid_hms[3], axis=0)), axis=0)
+                # 存储
+                np.save(file="F:\\chen\\pycharm\\DenseReg_baseline\\model\\exp\\train_cache\\nyu_training_s2_f128_daug_um_v1\\image\\hm\\data.npy", arr=valid_hms_all)
 
+                # # 读取
+                # b = np.load(file="data.npy")
             duration = time.time()-start_time
             
             for xyz_val, gt_val, name_val in zip(xyz_vals, gt_vals, name_vals):
@@ -113,6 +123,8 @@ def test(model, selected_step):
                 print("num_test"+num_test)
 
             step += 1
+            if step == 275:
+                break
 
         meanJntError_all = mean(meanJntError)
         print("meanJntError_min: " + str(meanJntError_all))

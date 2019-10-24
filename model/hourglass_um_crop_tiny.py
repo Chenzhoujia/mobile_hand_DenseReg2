@@ -66,7 +66,7 @@ MAXIMUM_DEPTH = 600.0
 class JointDetectionModel(object):
     _moving_average_decay = 0.9999
     _batchnorm_moving_average_decay = 0.9997
-    _init_lr = 0.001 * 1e8
+    _init_lr = 0.001 * 1e2
     if FLAGS.dataset == 'nyu':
         _num_epochs_per_decay = 10
     elif FLAGS.dataset == 'msra':
@@ -351,7 +351,9 @@ class JointDetectionModel(object):
         mask = tf.tile(tf.less(tiny_dm, -0.9), (1, 1, 1, 14))
         mask = 1 - tf.cast(mask, dtype=tf.float32)
         # 2D_mask chen_begin
-        gt_hms = gt_hms*mask
+        use_mask = True
+        if use_mask:
+            gt_hms = gt_hms*mask
         # 2D_mask chen_end
 
         # generate estimation
@@ -571,6 +573,8 @@ class JointDetectionModel(object):
         self.val_dms = dms
         self.est_hms = est_hms
         self.gt_pose = poses
+
+        self.valid_hm = end_points['hm_outs']
         print('testing graph is established')
 
     @property
@@ -887,8 +891,8 @@ class JointDetectionModel(object):
             return gt_vals, xyz_vals
 
         if step%100 == 0:
-            xyz_vals, gt_vals, names = sess.run(
-                [self.xyz_pts, self.gt_pose, names])
+            xyz_vals, gt_vals, valid_hm, names = sess.run(
+                [self.xyz_pts, self.gt_pose,self.valid_hm, names])
             #summary_writer.add_summary(summary_str, step)
 
             maxJntError=[]
@@ -899,10 +903,11 @@ class JointDetectionModel(object):
                 #print(np.concatenate((diff, dist), axis=1))
             print('[step: %d]test error:'%step, maxJntError)
             print('---\n')
-            return gt_vals, xyz_vals, names
+            return gt_vals, xyz_vals,valid_hm, names
 
-        gt_vals, xyz_vals, names = sess.run([self.gt_pose, self.xyz_pts, names])
-        return gt_vals, xyz_vals, names
+        xyz_vals, gt_vals, valid_hm, names = sess.run(
+            [self.xyz_pts, self.gt_pose, self.valid_hm, names])
+        return gt_vals, xyz_vals,valid_hm, names
 
 '''unit test
 '''
@@ -955,6 +960,6 @@ if __name__ == '__main__':
         # --dataset nyu --batch_size 3 --num_stack 2 --num_fea 128 --debug_level 2 --is_train False
     FLAGS.is_train = False
     if FLAGS.is_train:
-        run_train(dataset, val_dataset,20603)
+        run_train(dataset, val_dataset,1)
     else:
-        run_test(dataset, val_dataset, 27403)
+        run_test(dataset, val_dataset,0)

@@ -1,3 +1,4 @@
+# coding=UTF-8
 from __future__ import print_function, division, absolute_import
 
 from data.dataset_base import *
@@ -6,6 +7,14 @@ import data.dataset_base
 import scipy.io as sio
 
 from data.preprocess import crop_from_xyz_pose, crop_from_bbx, center_of_mass
+import _pickle as cPickle
+import tensorflow as tf
+from tqdm import tqdm
+
+import matplotlib
+import matplotlib.lines as lines
+import matplotlib.pyplot as plt # plt 用于显示图片
+import matplotlib.image as mpimg # mpimg 用于读取图片
 
 Annotation = namedtuple('Annotation', 'name,pose,bbx')
 
@@ -107,10 +116,11 @@ class NyuDataset(BaseDataset):
         names = [['depth_{}_{:07d}.png'.format(camera_idx+1, idx+1) for idx in range(len(joints[camera_idx]))] for camera_idx in range(camera_num)]
 
         if self.subset == 'testing':
-            with open('data/nyu_bbx.pkl', 'rb') as f:
-                bbxes = [cPickle.load(f)]
+            with open('..\\data\\nyu_bbx.pkl', 'rb') as f:
+                bbxes = [cPickle.load(f,encoding='iso-8859-1')]
 
         self._annotations = []
+        self._annotations_test = []
         if self.subset == 'testing':
             for c_j, c_n, c_b in zip(joints, names, bbxes):
                 for j, n, b in zip(c_j, c_n, c_b):
@@ -120,7 +130,9 @@ class NyuDataset(BaseDataset):
                     if is_trun:
                         j = j[self.keep_pose_idx]
                     b = np.asarray(b).reshape((-1,))
-                    self._annotations.append(Annotation(n, j.reshape((-1,)), b))
+                    self._annotations_test.append(Annotation(n, j.reshape((-1,)), b))
+            print('[data.NyuDataset]annotation has been loaded with %d samples, %fs'%\
+                  (len(self._annotations_test), time.time()-t1))
         else:
             for c_j, c_n in zip(joints, names):
                 for j, n in zip(c_j, c_n):
@@ -131,8 +143,8 @@ class NyuDataset(BaseDataset):
                         j = j[self.keep_pose_idx]
                     self._annotations.append(Annotation(n, j.reshape((-1,)), None))
 
-        print('[data.NyuDataset]annotation has been loaded with %d samples, %fs'%\
-              (len(self._annotations), time.time()-t1))
+            print('[data.NyuDataset]annotation has been loaded with %d samples, %fs'%\
+                  (len(self._annotations), time.time()-t1))
 
     def loadImage(self, idxes):
         ''' directly load images and annotations from the source directory
@@ -224,29 +236,29 @@ class NyuDataset(BaseDataset):
         iteration over the given dataset
         '''
         with tf.name_scope('batch_processing'):
-            min_queue_examples = 1 
 
-            filename_queue = tf.train.string_input_producer(
-                self.filenames, num_epochs=1, capacity=1, shuffle=False)
-            example_queue = tf.FIFOQueue(
-                capacity=10,
-                dtypes=[tf.string])
-            
-            reader = tf.TFRecordReader()
-            _, example_serialized = reader.read(filename_queue)
+            reader_test = NyuDataset('testing')
+            reader_test.read_make_batch_test(batch_size)
+            example_serialized = reader_test.get_batch_data_test
 
-            results = []
+            dm = example_serialized[0]
+            in_h, in_w, in_c = dm.get_shape()[1].value, dm.get_shape()[2].value, dm.get_shape()[3].value
+            dm.set_shape([batch_size, in_h, in_w, in_c])
+            pose = example_serialized[1]
+            in_h = pose.get_shape()[1].value
+            pose.set_shape([batch_size, in_h])
+            cfg = example_serialized[2]
+            in_h = cfg.get_shape()[1].value
+            cfg.set_shape([batch_size, in_h])
+            com = example_serialized[3]
+            in_h = com.get_shape()[1].value
+            com.set_shape([batch_size, in_h])
 
-            dm, pose, bbx, name = self.parse_example_test(example_serialized)
-            if preprocess_op != None:
-                result = preprocess_op(dm, pose, bbx, self.cfg)
-                results.append(list(result)+[name])
-            else:
-                results.append([dm, pose, name])
+            name = example_serialized[4]
 
-            batch = tf.train.batch_join(
-                results, batch_size=batch_size, capacity=2)
-            return batch
+            # batch = tf.train.batch_join(
+            #     results, batch_size=batch_size, capacity=2)
+            return dm, pose, cfg, com, name
 
     def get_batch_op(self, 
                      batch_size, num_readers=1, num_preprocess_threads=1, 
@@ -256,55 +268,204 @@ class NyuDataset(BaseDataset):
         iteration over the given dataset
         '''
         if self.subset == 'testing': 
-            with tf.name_scope('batch_processing'):
-                min_queue_examples = batch_size*1 
+            with tf.name_scope('batch_processing_'):
+                reader_test = NyuDataset('testing')
+                reader_test.read_make_batch_test(batch_size)
+                example_serialized = reader_test.get_batch_data_test
+                #dm, pose, cfg, com, tf.substr(list_name,-26,26)
+                dm = example_serialized[0]
+                in_h, in_w, in_c = dm.get_shape()[1].value, dm.get_shape()[2].value, dm.get_shape()[3].value
+                dm.set_shape([batch_size,in_h,in_w,in_c])
+                pose = example_serialized[1]
+                in_h= pose.get_shape()[1].value
+                pose.set_shape([batch_size,in_h])
+                cfg = example_serialized[2]
+                in_h= cfg.get_shape()[1].value
+                cfg.set_shape([batch_size,in_h])
+                com = example_serialized[3]
+                in_h= com.get_shape()[1].value
+                com.set_shape([batch_size,in_h])
 
-                filename_queue = tf.train.string_input_producer(
-                    self.filenames, capacity=32, shuffle=True)
-
-                example_queue = tf.RandomShuffleQueue(
-                    capacity=self.approximate_num_per_file*8 + 3*batch_size,
-                    min_after_dequeue=self.approximate_num_per_file*8,
-                    dtypes=[tf.string])
-                
-                if num_readers > 1:
-                    enqueue_ops = []
-                    for _ in range(num_readers):
-                        reader = tf.TFRecordReader()
-                        _, value = reader.read(filename_queue)
-                        enqueue_ops.append(example_queue.enqueue([value]))
-
-                    tf.train.queue_runner.add_queue_runner(
-                        tf.train.queue_runner.QueueRunner(example_queue, enqueue_ops))
-                    example_serialized = example_queue.dequeue()
-                else:
-                    reader = tf.TFRecordReader()
-                    _, example_serialized = reader.read(filename_queue)
-
-                results = []
-                for thread_idx in range(num_preprocess_threads):
-                    dm, pose, bbx, name = self.parse_example_test(example_serialized)
-                    if preprocess_op != None:
-                        result = preprocess_op(dm, pose, bbx, self.cfg)
-                        results.append(list(result))
-                    else:
-                        results.append([dm, pose])
-                batch = tf.train.batch_join(
-                    results, batch_size=batch_size, capacity=2*num_preprocess_threads*batch_size)
-                return batch
+                return dm, pose, cfg, com
         else:
-            return super(NyuDataset, self).get_batch_op(batch_size, 
-                                                        num_readers, 
-                                                        num_preprocess_threads,
-                                                        preprocess_op,
-                                                        is_train)
+            with tf.name_scope('batch_processing'):
+                reader = NyuDataset('training')
+                reader.read_make_batch(batch_size)
+                example_serialized = reader.get_batch_data
+                #dm, pose, cfg, com, tf.substr(list_name,-26,26)
+                dm = example_serialized[0]
+                pose = example_serialized[1]
+                cfg = example_serialized[2]
+                com = example_serialized[3]
+
+                dm = example_serialized[0]
+                in_h, in_w, in_c = dm.get_shape()[1].value, dm.get_shape()[2].value, dm.get_shape()[3].value
+                dm.set_shape([batch_size,in_h,in_w,in_c])
+                pose = example_serialized[1]
+                in_h= pose.get_shape()[1].value
+                pose.set_shape([batch_size,in_h])
+                cfg = example_serialized[2]
+                in_h= cfg.get_shape()[1].value
+                cfg.set_shape([batch_size,in_h])
+                com = example_serialized[3]
+                in_h= com.get_shape()[1].value
+                com.set_shape([batch_size,in_h])
+
+                return dm, pose, cfg, com
+
+    def read_make_batch(self, batchnum):
+        #加载文件名和label
+        self.loadAnnotation()
+
+        #make batch
+        num_sample = len(self.annotations)
+        # 处理 self.annotations
+        list_name = []
+        all_pose = np.zeros(shape=[num_sample, 36*3], dtype=np.float32)
+        for i in tqdm(range(num_sample)):
+            this_an = self.annotations[i]
+
+            list_name.append(os.path.join(self.img_dir, this_an.name))
+            all_pose[i] = this_an.pose
+
+        list_name = tf.constant(list_name)
+        dataset = tf.data.Dataset.from_tensor_slices((list_name, all_pose))
+        dataset = dataset.map(self._parse_function)
+        dataset = dataset.repeat()
+        dataset = dataset.shuffle(buffer_size=320)
+        self.dataset = dataset.batch(batchnum)
+        #self.iterator = self.dataset.make_initializable_iterator() sess.run(dataset_RHD.iterator.initializer)
+        self.iterator = self.dataset.make_one_shot_iterator()
+        self.get_batch_data = self.iterator.get_next()
+
+    def read_make_batch_test(self, batchnum):
+        #加载文件名和label
+        self.loadAnnotation()
+
+        #make batch
+        num_sample = len(self._annotations_test)-2
+        # 处理 self.annotations
+        list_name = []
+        all_bbx = np.zeros(shape=[num_sample, 5], dtype=np.float32)
+        all_pose = np.zeros(shape=[num_sample, 36*3], dtype=np.float32)
+        for i in tqdm(range(num_sample)):
+            this_an = self._annotations_test[i]
+
+            list_name.append(os.path.join(self.img_dir, this_an.name))
+            all_pose[i] = this_an.pose
+            all_bbx[i] = this_an.bbx
+
+        list_name = tf.constant(list_name)
+        dataset = tf.data.Dataset.from_tensor_slices((list_name, all_pose, all_bbx))
+        dataset = dataset.map(self._parse_function_test)
+        dataset = dataset.repeat()
+        dataset = dataset.shuffle(buffer_size=1)
+        self.dataset_test = dataset.batch(batchnum)
+        #self.iterator = self.dataset.make_initializable_iterator() sess.run(dataset_RHD.iterator.initializer)
+        self.iterator_test = self.dataset_test.make_one_shot_iterator()
+        self.get_batch_data_test = self.iterator_test.get_next()
+
+    @staticmethod
+    def _parse_function(list_name, all_pose):
+
+        image_string = tf.read_file(list_name)
+        image_decoded = tf.image.decode_png(image_string)
+        image_decoded = tf.image.resize_images(image_decoded, [480,640], method=0)
+        image_decoded.set_shape([480,640,3])
+        image = tf.cast(image_decoded, tf.float32)
+
+        _, g, b = tf.unstack(image, axis=-1)
+        g, b = tf.cast(g, tf.uint16), tf.cast(b, tf.uint16)
+        g = tf.multiply(g, 256)  # left shift with 8 bits
+        d = tf.expand_dims(tf.bitwise.bitwise_or(g, b), -1)
+        image = tf.to_float(d)
+
+        cfg = CameraConfig(fx=588.235, fy=587.084, cx=320, cy=240, w=640, h=480)
+        l = [0,3,6,9,12,15,18,21,24,25,27,30,31,32]
+        keep_pose_idx = [[ll*3, ll*3+1, ll*3+2] for ll in l]
+        keep_pose_idx = np.array([idx for sub_idx in keep_pose_idx for idx in sub_idx]).reshape((-1, 1))
+
+        pose = tf.gather_nd(all_pose, keep_pose_idx)
+
+        dm, pose, cfg = crop_from_xyz_pose(image, pose, cfg, 128, 128)
+        com = center_of_mass(dm, cfg)
+
+        return dm, pose, cfg, com, tf.substr(list_name,-26,26)
+
+    @staticmethod
+    def _parse_function_test(list_name, all_pose, all_bbx):
+
+        image_string = tf.read_file(list_name)
+        image_decoded = tf.image.decode_png(image_string)
+        image_decoded = tf.image.resize_images(image_decoded, [480,640], method=0)
+        image_decoded.set_shape([480,640,3])
+        image = tf.cast(image_decoded, tf.float32)
+
+        _, g, b = tf.unstack(image, axis=-1)
+        g, b = tf.cast(g, tf.uint16), tf.cast(b, tf.uint16)
+        g = tf.multiply(g, 256)  # left shift with 8 bits
+        d = tf.expand_dims(tf.bitwise.bitwise_or(g, b), -1)
+        image = tf.to_float(d)
+
+        cfg = CameraConfig(fx=588.235, fy=587.084, cx=320, cy=240, w=640, h=480)
+        l = [0,3,6,9,12,15,18,21,24,25,27,30,31,32]
+        keep_pose_idx = [[ll*3, ll*3+1, ll*3+2] for ll in l]
+        keep_pose_idx = np.array([idx for sub_idx in keep_pose_idx for idx in sub_idx]).reshape((-1, 1))
+
+        pose = tf.gather_nd(all_pose, keep_pose_idx)
+
+        dm, pose, cfg = crop_from_bbx(image, pose, all_bbx, cfg, 128, 128)
+        com = center_of_mass(dm, cfg)
+
+        return dm, pose, cfg, com, tf.substr(list_name,-26,26)
 
 def saveTFRecord():
-    # reader = NyuDataset('training')
-    # reader.write_TFRecord_multi_thread(num_threads=30, num_shards=300)
+    reader_test = NyuDataset('testing')
+    #reader.write_TFRecord_multi_thread(num_threads=30, num_shards=300)
+    reader_test.read_make_batch_test(30)
 
-    reader = NyuDataset('testing')
-    reader.write_TFRecord_multi_thread(num_threads=16, num_shards=16)
+    # reader = NyuDataset('training')
+    # # reader.write_TFRecord_multi_thread(num_threads=30, num_shards=300)
+    # reader.read_make_batch(30)
+
+    with tf.Session() as sess:
+
+        #for i in tqdm(range(10)):
+        for i in tqdm(range(10000)):
+            #image, keypoint_xyz, name = sess.run(reader.get_batch_data)
+            dm, pose, cfg, com, name = sess.run(reader_test.get_batch_data_test)
+            print('\n')
+            print(name)
+            # fig = plt.figure()
+            # ax1 = fig.add_subplot(2, 2, 1)
+            # ax1.axis('off')
+            # ax2 = fig.add_subplot(2, 2, 2)
+            # ax2.axis('off')
+            # ax3 = fig.add_subplot(2, 2, 3)
+            # ax3.axis('off')
+            # ax4 = fig.add_subplot(2, 2, 4)
+            # ax4.axis('off')
+            # ax1.imshow(image[0, :, :, 0], cmap=matplotlib.cm.jet)
+            # ax2.imshow(image[1, :, :, 0], cmap=matplotlib.cm.jet)
+            # ax3.imshow(image_test[0, :, :, 0], cmap=matplotlib.cm.jet)
+            # ax4.imshow(image_test[1, :, :, 0], cmap=matplotlib.cm.jet)
+            #
+            # #
+            # ax1.set_title(name[0], fontsize=6, color='r')
+            # ax2.set_title(name[1], fontsize=6, color='r')
+            # ax3.set_title(name_test[0], fontsize=6, color='r')
+            # ax4.set_title(name_test[1], fontsize=6, color='r')
+            #
+            # fig.subplots_adjust(right=0.8)
+            #
+            # plt.savefig(
+            #     'F:\\chen\\pycharm\\DenseReg_baseline\\model\\exp\\train_cache\\nyu_training_s2_f128_daug_um_v1\\image\\hm\\' + str(
+            #         i).zfill(5) + '.png')
+            # plt.clf()
+            # plt.close(fig)
+
+    # reader = NyuDataset('testing')
+    # reader.write_TFRecord_multi_thread(num_threads=16, num_shards=16)
 
 if __name__ == '__main__':
     saveTFRecord()

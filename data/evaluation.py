@@ -16,9 +16,9 @@ class Evaluation(object):
         diff = skel1.reshape(-1,3) - skel2.reshape(-1,3)
         diff = alg.norm(diff, axis=1)
         mean = np.nanmean(diff)
-        if np.isnan(mean):
-            print("get nan return 7.0")
-            return 7.0
+        # if np.isnan(mean):
+        #     print("get nan return 7.0")
+        #     return 7.0
         return mean
 
     

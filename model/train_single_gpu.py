@@ -44,9 +44,9 @@ def train(model, restore_step=None):
             initializer=tf.constant_initializer(0), trainable=False)
         lr = tf.train.exponential_decay(model.init_lr,
                                        global_step,
-                                       model.decay_steps,
+                                       model.decay_steps*2,
                                        model.lr_decay_factor,
-                                       staircase=True)
+                                       staircase=False)
 
         print('[train] learning rate decays per %d steps with rate=%f'%(
             model.decay_steps,model.lr_decay_factor))
@@ -134,7 +134,7 @@ def train(model, restore_step=None):
             else:
                 checkpoint_path = os.path.join(model.train_dir, 'model.ckpt-%d'%restore_step)
                 saver.restore(sess, checkpoint_path)
-                start_step = restore_step
+                #start_step = restore_step
                 print('[test_model]model has been resotored from %s' % checkpoint_path)
 
         tf.train.start_queue_runners(sess=sess)
@@ -149,7 +149,7 @@ def train(model, restore_step=None):
 
         log_path = os.path.join(model.train_dir, 'training_log.txt')
         f = open(log_path, 'a')
-        meanJntError_min = 9.52535734
+        meanJntError_min = 9.441
         meanJntError_all = float('Inf')
         for step in range(start_step, model.max_steps):
             if f.closed:
@@ -158,10 +158,11 @@ def train(model, restore_step=None):
             start_time = time.time()
             ave_loss = 0
             sess.run(reset_op)
-            for sub_step in range(int(accu_steps)):
-                _, _, loss_value = sess.run([accum_op, batchnorm_update_op, loss])
-                assert not np.isnan(loss_value), 'Model diverged with loss = NaN'
-                ave_loss += loss_value
+            if step!=0:
+                for sub_step in range(int(accu_steps)):
+                    _, _, loss_value = sess.run([accum_op, batchnorm_update_op, loss])
+                    assert not np.isnan(loss_value), 'Model diverged with loss = NaN'
+                    ave_loss += loss_value
 
             _ = sess.run([train_op])
             ave_loss /= accu_steps
@@ -178,7 +179,7 @@ def train(model, restore_step=None):
                 summary_writer.add_summary(summary_str, step)
 
 
-            if step%200 == 0 and hasattr(model, 'do_test') or ave_loss<8300:
+            if step%200 == 0 and hasattr(model, 'do_test'):
             #     model.do_test(sess, summary_writer, step)
                 print('[test_model]begin test')
                 test_num = 0
@@ -198,9 +199,9 @@ def train(model, restore_step=None):
                     for xyz_val, gt_val in zip(xyz_vals, gt_vals):
                         meanJntError.append(Evaluation.meanJntError(xyz_val, gt_val))
                         test_num += 1
-                        if test_num >= 8252:
+                        if test_num >= 8250:
                             break
-                    if test_num >= 8252:
+                    if test_num >= 8250:
                         meanJntError_all = mean(meanJntError)
                         mean_error = str(mean(meanJntError))
                         num_test = str(len(meanJntError))
@@ -226,7 +227,7 @@ def train(model, restore_step=None):
                 if not os.path.exists(model.train_dir):
                     os.makedirs(model.train_dir)
                 checkpoint_path = os.path.join(model.train_dir, 'model.ckpt')
-                saver.save(sess, checkpoint_path, global_step=step+3)
+                saver.save(sess, checkpoint_path, global_step=step)
                 print('model has been saved to %s\n'%checkpoint_path)
                 f.write('model has been saved to %s\n'%checkpoint_path)
                 f.flush()
