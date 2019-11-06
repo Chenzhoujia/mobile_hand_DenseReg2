@@ -73,12 +73,14 @@ def detect_net(dm_inputs, cfgs, coms, num_jnt, is_training=True, scope=''):
     end_points['hm_outs'] = []
     end_points['hm3_outs'] = []
     end_points['um_outs'] = []
-    end_points['hm_outs_GNN2'] = []
-    end_points['hm3_outs_GNN2'] = []
-    end_points['um_outs_GNN2'] = []
-    end_points['hm_outs_GNN5'] = []
-    end_points['hm3_outs_GNN5'] = []
-    end_points['um_outs_GNN5'] = []
+
+    end_points['hm_CAM1'] = []
+    end_points['hm_CAM2'] = []
+    end_points['hm_add1'] = []
+    end_points['hm_add2'] = []
+
+    end_points['dm_inputs'] = dm_inputs
+
     global CAM_num
     CAM_num = 0
     with tf.name_scope(scope, 'hg_net'):
@@ -181,6 +183,8 @@ def detect_net(dm_inputs, cfgs, coms, num_jnt, is_training=True, scope=''):
                 # 用图网络，对[hm_out, hm3_out, um_out进行更改
                 cur_node_representations = hm_out
                 CAM_num = CAM_num + 1
+                if False:
+                    mask_2d = tf.cast(tf.less(tiny_dm, -0.9), dtype=tf.float32)
                 with tf.variable_scope('GNN_' + str(i) + '_' + str(CAM_num)):
 
                     weights_initializer = tf.truncated_normal_initializer(stddev=0.01)
@@ -192,7 +196,7 @@ def detect_net(dm_inputs, cfgs, coms, num_jnt, is_training=True, scope=''):
                                                        trainable=True,
                                                        restore=True)
 
-                    cur_node_representations = _apply_gnn_layer(
+                    cur_node_representations, add_hm = _apply_gnn_layer(
                         cur_node_representations,
                         learnable_Adj, uvd)
                     cur_node_representations = tf.contrib.layers.layer_norm(cur_node_representations)
@@ -211,17 +215,43 @@ def detect_net(dm_inputs, cfgs, coms, num_jnt, is_training=True, scope=''):
                                                        regularizer=l2_regularizer,
                                                        trainable=True,
                                                        restore=True)
+                    if i==0:
+                        end_points['hm_CAM1'] = learnable_Adj
+                        end_points['hm_add1'] = add_hm
 
-                    cur_node_representations = _apply_gnn_layer(
+                    else:
+                        end_points['hm_CAM2'] = learnable_Adj
+                        end_points['hm_add2'] = add_hm
+                    cur_node_representations, _ = _apply_gnn_layer(
                         cur_node_representations,
                         learnable_Adj, uvd)
                     cur_node_representations = tf.contrib.layers.layer_norm(cur_node_representations)
                 hm3_out = cur_node_representations
                 end_points['hm3_outs'].append(hm3_out)
+                if False:
+                    cur_node_representations = um_out
+                    CAM_num = CAM_num + 1
+                    with tf.variable_scope('GNN_' + str(i) + '_' + str(CAM_num)):
 
-                with tf.variable_scope('GNN_no_local_um' + str(i)):
-                    um_out = no_local(um_out)
-                end_points['um_outs'].append(um_out)
+                        weights_initializer = tf.truncated_normal_initializer(stddev=0.01)
+                        l2_regularizer = losses.l2_regularizer(0.0005)
+                        learnable_Adj = variables.variable('learnable_adj_weights_' + str(CAM_num),
+                                                           shape=[14*3, 14*3],
+                                                           initializer=weights_initializer,
+                                                           regularizer=l2_regularizer,
+                                                           trainable=True,
+                                                           restore=True)
+
+                        cur_node_representations = _apply_gnn_layer(
+                            cur_node_representations,
+                            learnable_Adj, uvd)
+                        cur_node_representations = tf.contrib.layers.layer_norm(cur_node_representations)
+                    um_out = cur_node_representations
+                    end_points['um_outs'].append(um_out)
+                else:
+                    with tf.variable_scope('GNN_no_local_um' + str(i)):
+                        um_out = no_local(um_out)
+                    end_points['um_outs'].append(um_out)
 
                 if i < FLAGS.num_stack-1:
                     tmp_out = tf.concat([hm_out, hm3_out, um_out], axis=-1)
@@ -330,18 +360,20 @@ def _apply_gnn_layer(node_embeddings_: tf.Tensor,
 
     #cur_node_states = tf.reshape(node_embeddings,(batch, -1))
     n, h, w, c = node_embeddings_.shape
-    node_embeddings = tf.reshape(node_embeddings_,(-1,14))
+    node_embeddings = tf.reshape(node_embeddings_,(-1,c))
     node_embeddings = tf.matmul(node_embeddings, adjacency_lists)  # [D*B, G]
-    node_embeddings = tf.reshape(node_embeddings, (n, h, w, 14))
+    node_embeddings = tf.reshape(node_embeddings, (n, h, w, c))
+    node_embeddings_ = node_embeddings
 
-#    with tf.variable_scope('no_local' + str(i)):
-    node_embeddings = no_local(node_embeddings)
+    for i in range(num_timesteps):
+        with tf.variable_scope('GNN_num_timesteps_' + str(i)):
+            node_embeddings = no_local_one_time(node_embeddings)
 
     node_embeddings = tf.concat([node_embeddings,node_embeddings_, uvd], axis=-1)
     # === Prepare things we need across all timesteps:
-    node_embeddings = _residual(node_embeddings, num_out=14)
+    node_embeddings = _residual(node_embeddings, num_out=c)
 
-    return node_embeddings
+    return node_embeddings, node_embeddings_
 def no_local(X):
     s = X.get_shape().as_list()
     step1_out_chan = s[-1] * 2
@@ -380,6 +412,42 @@ def no_local(X):
 
         output_list.append([X_123])
     X_123 = tf.squeeze(tf.stack(output_list))
+    X_123 = ops.conv2d(X_123, s[-1], [1, 1], stride=1, padding='SAME',
+               activation=None,
+               batch_norm_params=None,
+               weight_decay=0.0005)
+    X_123 = X_123+X
+
+    return X_123
+
+def no_local_one_time(X):
+    s = X.get_shape().as_list() #s[0,1,2,3]
+    step1_out_chan = s[-1] * 2
+    X_1 = ops.conv2d(X, step1_out_chan, [1, 1], stride=1, padding='SAME',
+               activation=None,
+               batch_norm_params=None,
+               weight_decay=0.0005)
+    X_2 = ops.conv2d(X, step1_out_chan, [1, 1], stride=1, padding='SAME',
+               activation=None,
+               batch_norm_params=None,
+               weight_decay=0.0005)
+    X_3 = ops.conv2d(X, step1_out_chan, [1, 1], stride=1, padding='SAME',
+               activation=None,
+               batch_norm_params=None,
+               weight_decay=0.0005)
+
+    # 将 n h w 转换成
+    X_1 = tf.reshape(X_1,(s[0],s[1]*s[2],step1_out_chan))
+    X_2 = tf.reshape(X_2,(s[0],s[1]*s[2],step1_out_chan))
+    X_2 = tf.transpose(X_2, [0, 2, 1])
+    X_3 = tf.reshape(X_3,(s[0],s[1]*s[2],step1_out_chan))
+
+    X_12 = tf.matmul(X_1, X_2)
+    X_12 = tf.nn.softmax(X_12)
+
+    X_123 = tf.matmul(X_12, X_3)
+    X_123 = tf.reshape(X_123, (s[0],s[1], s[2], step1_out_chan))
+
     X_123 = ops.conv2d(X_123, s[-1], [1, 1], stride=1, padding='SAME',
                activation=None,
                batch_norm_params=None,

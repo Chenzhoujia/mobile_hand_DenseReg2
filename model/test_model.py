@@ -73,29 +73,42 @@ def test(model, selected_step):
         step = 0
         maxJntError = []
         meanJntError = []
+        changeList  = np.zeros((8250, 2))
         while True:
             start_time = time.time()
             try:
-                gt_vals, xyz_vals, valid_hms, name_vals = model.do_test(sess, summary_writer, step, names)
+                xyz_vals, gt_vals,  valid_hms, changes, CAM_hms, name_vals = model.do_test(sess, summary_writer, step, names)
             except tf.errors.OutOfRangeError:
                 print('run out of range')
                 break
-            if b'depth_1_0005744.png' in name_vals:
-                # 保存变量
-                valid_hms_all = np.concatenate((np.expand_dims(valid_hms[0], axis=0),
-                                np.expand_dims(valid_hms[1], axis=0),
-                                np.expand_dims(valid_hms[2], axis=0),
-                                np.expand_dims(valid_hms[3], axis=0)), axis=0)
-                # 存储
-                np.save(file="F:\\chen\\pycharm\\DenseReg_baseline\\model\\exp\\train_cache\\nyu_training_s2_f128_daug_um_v1\\image\\hm\\data.npy", arr=valid_hms_all)
-
-                # # 读取
-                # b = np.load(file="data.npy")
+            # 变化从小到大
+            #min = [2053 2013 2050 2023 2052 2060 2051 2057 2058 2049]
+            #max = [5750 5747 5746 5753 5744 3662 5751 5739 3664 3663]
+            # [2054 2014 2051 2024 2053 2061 2052 2058 2059 2050]
+            # [5751 5748 5747 5754 5745 3663 5752 5740 3665 3664]
+            #
+            if step ==0:
+                np.save(
+                    file="F:\\chen\\pycharm\\DenseReg_baseline\\model\\exp\\train_cache\\nyu_training_s2_f128_daug_um_v1\\image\\tmp\\CAM_hms.npy",
+                    arr=CAM_hms)
+            save_list = [2054, 2014, 2051, 2024, 2053, 2061, 2052, 2058, 2059, 2050, 5751, 5748, 5747, 5754, 5745, 3663, 5752, 5740, 3665, 3664]
+            for need_get_id in save_list:
+                if need_get_id>=(step*30+1) and need_get_id<=(step*30+29+1):
+                    # 保存变量
+                    valid_hms_all = np.concatenate((np.expand_dims(valid_hms[0], axis=0),
+                                    np.expand_dims(valid_hms[1], axis=0),
+                                    np.expand_dims(valid_hms[2], axis=0),
+                                    np.expand_dims(valid_hms[3], axis=0)), axis=0)
+                    # 存储
+                    np.save(file="F:\\chen\\pycharm\\DenseReg_baseline\\model\\exp\\train_cache\\nyu_training_s2_f128_daug_um_v1\\image\\tmp\\data"+str(need_get_id)+".npy", arr=valid_hms_all)
+                    break
+                    # # 读取
+                    # b = np.load(file="data.npy")
             duration = time.time()-start_time
-            
-            for xyz_val, gt_val, name_val in zip(xyz_vals, gt_vals, name_vals):
+            for xyz_val, gt_val, name_val, change in zip(xyz_vals, gt_vals, name_vals, changes):
                 maxJntError.append(Evaluation.maxJntError(xyz_val, gt_val))
                 meanJntError.append(Evaluation.meanJntError(xyz_val, gt_val))
+                changeList[test_num] = change
                 xyz_val = xyz_val.tolist()
                 res_str = '%s\t%s\n'%(name_val, '\t'.join(format(pt, '.4f') for pt in xyz_val))
                 res_str = res_str.replace('/', '\\')
@@ -126,9 +139,18 @@ def test(model, selected_step):
             if step == 275:
                 break
 
-        meanJntError_all = mean(meanJntError)
-        print("meanJntError_min: " + str(meanJntError_all))
+        mean_error = str(mean(meanJntError))
+        num_test = str(len(meanJntError))
+        print("mean_error" + mean_error)
+        print("num_test" + num_test)
         print('finish test')
+
+        # 存储
+        np.save(
+            file="F:\\chen\\pycharm\\DenseReg_baseline\\model\\exp\\train_cache\\nyu_training_s2_f128_daug_um_v1\\image\\tmp\\change.npy",
+            arr=changeList)
+
+        print("change has saved")
         f.close()
         Evaluation.plotError(maxJntError, 'result.txt')
 def mean(a):

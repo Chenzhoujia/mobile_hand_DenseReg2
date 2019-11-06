@@ -66,7 +66,7 @@ MAXIMUM_DEPTH = 600.0
 class JointDetectionModel(object):
     _moving_average_decay = 0.9999
     _batchnorm_moving_average_decay = 0.9997
-    _init_lr = 0.001 * 1e2
+    _init_lr = 0.001 * 1e10
     if FLAGS.dataset == 'nyu':
         _num_epochs_per_decay = 10
     elif FLAGS.dataset == 'msra':
@@ -358,66 +358,47 @@ class JointDetectionModel(object):
 
         # generate estimation
         end_points = self.inference(normed_dms, cfgs, coms, reuse_variables=None, is_training=True)
-        
+
+        if True:
+            CAM_hm = tf.concat([tf.expand_dims(end_points['hm_CAM1'], axis=-1),
+                                tf.expand_dims(end_points['hm_CAM2'], axis=-1)], axis=-1)
+            hm_add = tf.concat([tf.expand_dims(end_points['hm_add1'], axis=-1),
+                                tf.expand_dims(end_points['hm_add2'], axis=-1)], axis=-1)
+
+            self.valid_hm_train = end_points['hm_outs']
+            self.dm_inputs_train = end_points['dm_inputs']
+            self.CAM_hm_train = CAM_hm
+            self.hm_add_train = hm_add
+            # [self.xyz_pts, self.gt_pose, self.valid_hm, self.est_hm_list_change, self.CAM_hm, names])
+
         # heatmap loss
         est_hm_list1 = end_points['hm_outs']
         hm_losses1 = [tf.nn.l2_loss(est_hms-gt_hms) for est_hms in est_hm_list1]
-        # est_hm_list2 = end_points['hm_outs_GNN2']*2
-        # hm_losses2 = [tf.nn.l2_loss(est_hms-gt_hms) for est_hms in est_hm_list2]
-        # est_hm_list3 = end_points['hm_outs_GNN5']*2
-        # hm_losses3 = [tf.nn.l2_loss(est_hms-gt_hms) for est_hms in est_hm_list3]
 
 
         # 3D heatmap loss
         est_hm3_list1 = end_points['hm3_outs']
         hm3_losses1 = [tf.nn.l2_loss(est_hm3-gt_hm3s) for est_hm3 in est_hm3_list1]
-        # est_hm3_list2 = end_points['hm3_outs_GNN2']*2
-        # hm3_losses2 = [tf.nn.l2_loss(est_hm3-gt_hm3s) for est_hm3 in est_hm3_list2]
-        # est_hm3_list3 = end_points['hm3_outs_GNN5']*2
-        # hm3_losses3 = [tf.nn.l2_loss(est_hm3-gt_hm3s) for est_hm3 in est_hm3_list3]
 
         # offsetmap loss
         # we only consider the nearby point offset maps
         # in order to make the oms loss on the same scale w.r.t. hms loss
         est_um_list1 = end_points['um_outs']
         um_losses1 = [tf.nn.l2_loss(est_ums-gt_ums) for est_ums in est_um_list1]
-        # est_um_list2 = end_points['um_outs_GNN2']*2
-        # um_losses2 = [tf.nn.l2_loss(est_ums-gt_ums) for est_ums in est_um_list2]
-        # est_um_list3 = end_points['um_outs_GNN5']*2
-        # um_losses3 = [tf.nn.l2_loss(est_ums-gt_ums) for est_ums in est_um_list3]
 
 
         # add the weight decay loss
         reg_loss = tf.add_n(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES), 'reg_loss')
         hm_loss1 = tf.add_n(hm_losses1, 'hm_loss1')
-        um_loss1 = tf.add_n(um_losses1, 'um_loss1')
+        um_loss1 = tf.add_n(um_losses1, 'um_loss1')*0.1*0.3
         hm3_loss1 = tf.add_n(hm3_losses1, 'hm3_loss1')
 
-        # hm_loss2 = tf.add_n(hm_losses2, 'hm_loss2')
-        # um_loss2 = tf.add_n(um_losses2, 'um_loss2')
-        # hm3_loss2 = tf.add_n(hm3_losses2, 'hm3_loss2')
-        #
-        # hm_loss3 = tf.add_n(hm_losses3, 'hm_loss3')
-        # um_loss3 = tf.add_n(um_losses3, 'um_loss3')
-        # hm3_loss3 = tf.add_n(hm3_losses3, 'hm3_loss3')
-
-        # total_loss = (hm_loss1 + um_loss1 + hm3_loss1+
-        #               hm_loss2 + um_loss2 + hm3_loss2+
-        #               hm_loss3 + um_loss3 + hm3_loss3)/3 +reg_loss
 
         total_loss = (hm_loss1 + um_loss1 + hm3_loss1)/3 +reg_loss
 
         tf.summary.scalar('dir/um_loss', um_loss1)
         tf.summary.scalar('dir/hm_loss', hm_loss1)
         tf.summary.scalar('dir/hm3_loss', hm3_loss1)
-
-        # tf.summary.scalar('GNN1/um_loss', um_loss2)
-        # tf.summary.scalar('GNN1/hm_loss', hm_loss2)
-        # tf.summary.scalar('GNN1/hm3_loss', hm3_loss2)
-        #
-        # tf.summary.scalar('GNN2/um_loss', um_loss3)
-        # tf.summary.scalar('GNN2/hm_loss', hm_loss3)
-        # tf.summary.scalar('GNN2/hm3_loss', hm3_loss3)
 
         # to visualize the training error,
         # only pick the first three for tensorboard visualization
@@ -426,14 +407,7 @@ class JointDetectionModel(object):
             est_hm_list = est_hm_list1
             est_um_list = est_um_list1
             est_hm3_list = est_hm3_list1
-            # elif i==1:
-            #     est_hm_list = est_hm_list2
-            #     est_um_list = est_um_list2
-            #     est_hm3_list = est_hm3_list2
-            # else:
-            #     est_hm_list = est_hm_list3
-            #     est_um_list = est_um_list3
-            #     est_hm3_list = est_hm3_list3
+
             est_hms = est_hm_list[-1][0:3,:,:,:]
             est_ums = est_um_list[-1][0:3,:,:,:]
             est_hm3s = est_hm3_list[-1][0:3,:,:,:]
@@ -493,6 +467,20 @@ class JointDetectionModel(object):
         # 1st phase, gpu computation
         normed_dms = data.preprocess.norm_dm(dms, coms)
         end_points = self.inference(normed_dms, cfgs, coms, reuse_variables=reuse_variables, is_training=False)
+
+        # 计算 4个子loss
+        est_hm_list = end_points['hm_outs']
+        est_hm_list_change1 = tf.square(est_hm_list[1]-est_hm_list[0])
+        est_hm_list_change2 = tf.square(est_hm_list[3]-est_hm_list[2])
+        for sum_i in range(3):
+            est_hm_list_change1 = tf.reduce_sum(est_hm_list_change1, -1)
+            est_hm_list_change2 = tf.reduce_sum(est_hm_list_change2, -1)
+        est_hm_list_change = tf.concat([tf.expand_dims(est_hm_list_change1, axis=-1),
+                                        tf.expand_dims(est_hm_list_change2, axis=-1)], axis=-1)
+
+        #CAM
+        CAM_hm = tf.concat([tf.expand_dims(end_points['hm_CAM1'], axis=-1),
+                            tf.expand_dims(end_points['hm_CAM2'], axis=-1)], axis=-1)
 
         # est_hms = end_points['hm_outs_GNN5'][-1]
         est_hms = end_points['hm_outs'][-1]
@@ -575,6 +563,8 @@ class JointDetectionModel(object):
         self.gt_pose = poses
 
         self.valid_hm = end_points['hm_outs']
+        self.est_hm_list_change = est_hm_list_change
+        self.CAM_hm = CAM_hm
         print('testing graph is established')
 
     @property
@@ -873,41 +863,26 @@ class JointDetectionModel(object):
             #f = open(self._log_path, 'a')
             gt_vals, xyz_vals = sess.run(
                 [ self.gt_pose, self.xyz_pts])
-            # summary_writer.add_summary(summary_str, step)
-            #
-            # maxJntError=[]
-            # f.write('[%s] step %d\n'%(datetime.now(), step))
-            # for xyz_val, gt_val in zip(xyz_vals, gt_vals):
-            #     maxJntError.append(Evaluation.maxJntError(xyz_val, gt_val))
-            #     diff = (xyz_val-gt_val).reshape(-1,3)
-            #     dist = alg.norm(diff, axis=1).reshape(-1,1)
-            #     error_mat = np.concatenate((diff, dist), axis=1)
-            #     print(error_mat)
-            #     f.write(np.array_str(error_mat)+'\n')
-            # #print('validate error:', maxJntError)
-            # f.write('validation error: {}\n'.format(maxJntError))
-            # f.flush()
-            # f.close()
             return gt_vals, xyz_vals
 
-        if step%100 == 0:
-            xyz_vals, gt_vals, valid_hm, names = sess.run(
-                [self.xyz_pts, self.gt_pose,self.valid_hm, names])
-            #summary_writer.add_summary(summary_str, step)
+        # if step%100 == 0:
+        #     xyz_vals, gt_vals, valid_hm, change, names = sess.run(
+        #         [self.xyz_pts, self.gt_pose,self.valid_hm, self.est_hm_list_change, names])
+        #     #summary_writer.add_summary(summary_str, step)
+        #
+        #     maxJntError=[]
+        #     for xyz_val, gt_val in zip(xyz_vals, gt_vals):
+        #         maxJntError.append(Evaluation.meanJntError(xyz_val, gt_val))
+        #         diff = (xyz_val-gt_val).reshape(-1,3)
+        #         dist = alg.norm(diff, axis=1).reshape(-1,1)
+        #         #print(np.concatenate((diff, dist), axis=1))
+        #     print('[step: %d]test error:'%step, maxJntError)
+        #     print('---\n')
+        #     return gt_vals, xyz_vals,valid_hm, change, names
 
-            maxJntError=[]
-            for xyz_val, gt_val in zip(xyz_vals, gt_vals):
-                maxJntError.append(Evaluation.meanJntError(xyz_val, gt_val))
-                diff = (xyz_val-gt_val).reshape(-1,3)
-                dist = alg.norm(diff, axis=1).reshape(-1,1)
-                #print(np.concatenate((diff, dist), axis=1))
-            print('[step: %d]test error:'%step, maxJntError)
-            print('---\n')
-            return gt_vals, xyz_vals,valid_hm, names
-
-        xyz_vals, gt_vals, valid_hm, names = sess.run(
-            [self.xyz_pts, self.gt_pose, self.valid_hm, names])
-        return gt_vals, xyz_vals,valid_hm, names
+        xyz_vals, gt_vals, valid_hm, change, CAM_hm, names = sess.run(
+            [self.xyz_pts, self.gt_pose, self.valid_hm, self.est_hm_list_change, self.CAM_hm, names])
+        return xyz_vals, gt_vals, valid_hm, change, CAM_hm, names
 
 '''unit test
 '''
@@ -958,8 +933,8 @@ if __name__ == '__main__':
         # --dataset nyu --batch_size 28 --num_stack 2 --num_fea 128 --debug_level 2 --is_train True
         # 测试使用
         # --dataset nyu --batch_size 3 --num_stack 2 --num_fea 128 --debug_level 2 --is_train False
-    FLAGS.is_train = False
+    # FLAGS.is_train = False
     if FLAGS.is_train:
-        run_train(dataset, val_dataset,1)
+        run_train(dataset, val_dataset,39800)
     else:
-        run_test(dataset, val_dataset,0)
+        run_test(dataset, val_dataset,39800)

@@ -44,7 +44,7 @@ def train(model, restore_step=None):
             initializer=tf.constant_initializer(0), trainable=False)
         lr = tf.train.exponential_decay(model.init_lr,
                                        global_step,
-                                       model.decay_steps*2,
+                                       model.decay_steps,
                                        model.lr_decay_factor,
                                        staircase=False)
 
@@ -120,6 +120,7 @@ def train(model, restore_step=None):
         if restore_step is not None:# and restore_step>0:
 
             # # 得到该网络中，所有可以加载的参数
+            # retrain = True
             retrain = False
             if retrain:
                 variables = tf.contrib.framework.get_variables_to_restore()
@@ -131,10 +132,11 @@ def train(model, restore_step=None):
                 saver.restore(sess, checkpoint_path)
                 # 恢复saver
                 saver = tf.train.Saver(tf.global_variables())
+                print('[test_model]model has been resotored from %s' % checkpoint_path)
             else:
                 checkpoint_path = os.path.join(model.train_dir, 'model.ckpt-%d'%restore_step)
                 saver.restore(sess, checkpoint_path)
-                #start_step = restore_step
+                start_step = restore_step
                 print('[test_model]model has been resotored from %s' % checkpoint_path)
 
         tf.train.start_queue_runners(sess=sess)
@@ -149,8 +151,14 @@ def train(model, restore_step=None):
 
         log_path = os.path.join(model.train_dir, 'training_log.txt')
         f = open(log_path, 'a')
-        meanJntError_min = 9.441
+        meanJntError_min = float('Inf')
         meanJntError_all = float('Inf')
+        """
+            self.valid_hm_train = end_points['hm_outs']
+            self.dm_inputs_train = end_points['dm_inputs']
+            self.CAM_hm_train = CAM_hm
+            self.hm_add_train = hm_add
+        """
         for step in range(start_step, model.max_steps):
             if f.closed:
                 f = open(log_path, 'a')
@@ -160,7 +168,24 @@ def train(model, restore_step=None):
             sess.run(reset_op)
             if step!=0:
                 for sub_step in range(int(accu_steps)):
-                    _, _, loss_value = sess.run([accum_op, batchnorm_update_op, loss])
+                    save_train_db = False
+                    if save_train_db:
+                        base_path = "F:\\chen\\pycharm\\DenseReg_baseline\\model\\exp\\train_cache\\nyu_training_s2_f128_daug_um_v1\\image\\train_tmp\\"
+                        base_path  = base_path + str(step).zfill(7)+"_" +str(sub_step)
+
+                        _, _, loss_value, \
+                        valid_hm_train_,dm_inputs_train_, CAM_hm_train_,hm_add_train_  = sess.run([accum_op, batchnorm_update_op, loss,
+                                                     model.valid_hm_train, model.dm_inputs_train, model.CAM_hm_train, model.hm_add_train])
+                        np.save(file=base_path+"dm_inputs_train_.npy",arr=dm_inputs_train_)
+                        np.save(file=base_path+"CAM_hm_train_.npy",arr=CAM_hm_train_)
+                        valid_hm_train_ = np.concatenate((np.expand_dims(valid_hm_train_[0], axis=0),
+                                                        np.expand_dims(valid_hm_train_[1], axis=0),
+                                                        np.expand_dims(valid_hm_train_[2], axis=0),
+                                                        np.expand_dims(valid_hm_train_[3], axis=0)), axis=0)
+                        np.save(file=base_path+"hm_add_train_.npy",arr=hm_add_train_)
+                        np.save(file=base_path+"valid_hm_train_.npy",arr=valid_hm_train_)
+                    else:
+                        _, _, loss_value = sess.run([accum_op, batchnorm_update_op, loss])
                     assert not np.isnan(loss_value), 'Model diverged with loss = NaN'
                     ave_loss += loss_value
 
@@ -180,6 +205,7 @@ def train(model, restore_step=None):
 
 
             if step%200 == 0 and hasattr(model, 'do_test'):
+            #if False:
             #     model.do_test(sess, summary_writer, step)
                 print('[test_model]begin test')
                 test_num = 0
@@ -227,7 +253,7 @@ def train(model, restore_step=None):
                 if not os.path.exists(model.train_dir):
                     os.makedirs(model.train_dir)
                 checkpoint_path = os.path.join(model.train_dir, 'model.ckpt')
-                saver.save(sess, checkpoint_path, global_step=step)
+                saver.save(sess, checkpoint_path, global_step=step+0)
                 print('model has been saved to %s\n'%checkpoint_path)
                 f.write('model has been saved to %s\n'%checkpoint_path)
                 f.flush()
